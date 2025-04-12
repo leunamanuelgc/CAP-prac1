@@ -3,6 +3,13 @@
 #include <cmath>
 #include <cstdio>
 
+/*
+Compile with:
+g++ generateRndSeeds.cpp -o generate.exe
+After that execute with:
+./generate.exe
+*/
+
 using namespace std;
 
 #define PI 3.141582f
