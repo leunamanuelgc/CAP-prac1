@@ -34,7 +34,7 @@ point3D getRandomPoint(float x0, float y0, float z0, float maxRadius, float minR
 
 int main()
 {
-    int nClusters = 1;
+    int nClusters = 4;
     int nPointsPerCluster = 50;
 
     std::vector<point3D> data;
