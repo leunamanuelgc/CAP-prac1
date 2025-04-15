@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <limits>
 #include <omp.h>
+#include <iomanip>
 
 using namespace std;
 
@@ -12,7 +13,18 @@ using namespace std;
 
 struct point{
     float distance;
-    float* components;
+    vector<float> components;
+
+    bool operator==(const point& other) const {
+        if (distance != other.distance) return false;
+
+        for (int i=0; i<components.size(); i++) {
+            if (components[i] != other.components[i])
+                return false;
+        }
+
+        return true;
+    }
 };
 
 struct dataResult {
@@ -26,15 +38,25 @@ class Node{
     public:
         point centroid;
         vector<point> points;
+
         Node(){}
+
         Node(point _centroid, vector<point> _points) : centroid(_centroid), points(_points) {};
-        Node(point _centroid) : centroid(_centroid) {};
+
+        Node(point _centroid) : centroid(_centroid) { };
+
         vector<point>::iterator findPoint(point p) { return find(this->points.begin(), this->points.end(), p); }
+
         void addPoint(point p) { this->points.push_back(p); }
+
         void removePoint(point p) { this->points.erase( find(this->points.begin(), this->points.end(), p) ); }
+
         void removePointById(int p_id) { this->points.erase(this->points.begin()+p_id); }
+
         void removePointByIter(vector<point>::iterator it) { this->points.erase(it); }
+
         void setCentroid(point c) { this->centroid = c; }
+
         void setDistanceInPoint(int p_id, float d) { this->points[p_id].distance = d; }
 };
 
@@ -45,6 +67,7 @@ class Node{
 dataResult readData(){
     FILE* inFile;
     dataResult data;
+
     int nFilas, nCol;
     //Abrir archivo para lectura en binario
     inFile = fopen("salida", "rb");
@@ -62,9 +85,11 @@ dataResult readData(){
     for (int i = 0; i<nFilas; i++){
         size_t pointSize = sizeof(float)*nCol;
         point point;
-        point.components = (float*) malloc(sizeof(float)*nCol);
+        point.distance = -1;
         for (int j=0; j<nCol; j++){
-            size_t readCount = fread(&point.components[j], sizeof(float), 1, inFile);
+            float component;
+            size_t readCount = fread(&component, sizeof(float), 1, inFile);
+            point.components.push_back(component);
         }
         data.points.push_back(point);
     }
@@ -76,10 +101,9 @@ dataResult readData(){
 point initialize_centroid(int nColumnas){
     //Inicializar k centroides (aleatorios)
     point centroid;
-    centroid.components = (float*) malloc(sizeof(float)*nColumnas);
 
     for (int i=0; i<nColumnas; i++){
-        centroid.components[i] = 20.0f * rand()/RAND_MAX;
+        centroid.components.push_back(20.0f * rand()/RAND_MAX);
         cout << centroid.components[i] << "\t";
     }
     cout << "\n";
@@ -109,9 +133,9 @@ float squared_euclidean_distance(point p, point centroid, int nColumnas){
 */
 point calculate_new_centroid(vector<point> points, int nColumnas){
     point new_centroid;
-    new_centroid.components = (float*)malloc(sizeof(float)*nColumnas);
 
     for (int i=0; i<nColumnas; i++){
+        new_centroid.components.push_back(0.0);
         for (int j=0; j<points.size(); j++){
             new_centroid.components[i] += points[j].components[i];
         }
@@ -135,6 +159,8 @@ point addDistance(point p, float d) {
 
 void kMeans(dataResult data, int k){
     Node nodes[k];
+    cout << fixed << setprecision(6);
+
     //Inicializar los centroides
     for (int i=0; i<k; i++){
         cout << "\t" << "centroid " << i << endl;
@@ -142,7 +168,7 @@ void kMeans(dataResult data, int k){
     }
 
     for(int iter=0; iter<MAX_ITERATIONS; iter++){
-
+        cout << "iteration " << iter << endl;
 
         for (int i=0; i<data.points.size(); i++){
             float* sqr_distances = (float*)malloc(sizeof(float)*k);
@@ -164,39 +190,55 @@ void kMeans(dataResult data, int k){
 
             //Buscar el punto dentro de los otros nodos. Si se encuentra, se elimina de ese nodo
             for (int j=0; j<k; j++){
-                vector<point>::iterator it = nodes[k].findPoint(data.points[i]);
-                int last = nodes[k].points.size()-1;
-                if (min_id == j){
-                    if (it != nodes[k].points.end() || equivalentPoints(data.points[i], nodes[k].points[last], data.nColumnas)){
-                        //Si encuentra el punto en el mismo nodo en el que estaba, actualiza la distancia
-                        int p_id = distance(nodes[k].points.begin(), it);
-                        nodes[k].setDistanceInPoint(p_id,min_dist);
+                vector<point>::iterator it;
+                // Si el vector de puntos no está vacío...
+                
+                if ( !nodes[j].points.empty() ){
+                    it = nodes[j].findPoint(data.points[i]);
+                
+                    int last = nodes[j].points.size()-1;
+                    if (min_id == j){
+                        if (it != nodes[j].points.end() || equivalentPoints(data.points[i], nodes[j].points[last], data.nColumnas)){
+                            //Si encuentra el punto en el mismo nodo en el que estaba, actualiza la distancia
+                            int p_id = distance(nodes[j].points.begin(), it);
+                            nodes[j].setDistanceInPoint(p_id,min_dist);
+                        } else {
+                            // Si no encuentra el punto en el nodo cuya distancia entre estos es menor, lo añade
+                            addDistance(data.points[i], min_dist);
+                            nodes[min_id].addPoint(data.points[i]);
+                        }
                     } else {
-                        // Si no encuentra el punto en el nodo cuya distancia entre estos es menor, lo añade
-                        addDistance(data.points[i], min_dist);
-                        nodes[min_id].addPoint(data.points[i]);
+                        if (it != nodes[j].points.end() || equivalentPoints(data.points[i], nodes[j].points[last], data.nColumnas)){
+                            //Si encuentra el punto en el nodo que no le pertenece, lo elimina
+                            nodes[j].removePointByIter(it);
+                            break;
+                        }
                     }
+                //Si el vector de puntos está vacío...
                 } else {
-                    if (it != nodes[k].points.end() || equivalentPoints(data.points[i], nodes[k].points[last], data.nColumnas)){
-                        //Si encuentra el punto en el nodo que no le pertenece, lo elimina
-                        nodes[k].removePointByIter(it);
-                        break;
+                    if (min_id == j){
+                        nodes[min_id].addPoint(data.points[i]);
+                        it = nodes[min_id].points.end();
+                        int p_id = distance(nodes[min_id].points.begin(), it) - 1;
+                        nodes[min_id].setDistanceInPoint(p_id,min_dist);
                     }
                 }
             }
         }
 
         for (int i=0; i<k; i++){
-            nodes[k].setCentroid(calculate_new_centroid(nodes[k].points, data.nColumnas));
-            cout << "centroid " << i << endl;
+            if (!nodes[i].points.empty())
+                nodes[i].setCentroid(calculate_new_centroid(nodes[i].points, data.nColumnas));
+            cout << "centroid " << i << "\t";
             for (int j=0; j<data.nColumnas; j++){
-                cout << nodes[k].centroid.components[j] << "\t";
+                cout << nodes[i].centroid.components[j] << "\t";
             }
             cout << "\n";
         }
-
-
+        cout << endl;
     }
+
+
     //Asignar punto a su centroide mas cercano. Para ello, calcular la distancia entre un punto y todos los nodos.
     
      //Despues, cada nodo ajusta la media de todos los puntos
