@@ -13,7 +13,7 @@ using namespace std;
 
 struct point{
     float distance;
-    vector<float> components;
+    vector<float> components; 
 
     bool operator==(const point& other) const {
         if (distance != other.distance) return false;
@@ -33,6 +33,58 @@ struct dataResult {
     float** distances;
     vector<point> points;
 };
+
+class Cluster {
+private:
+    int cluster_id;
+    vector<float> centroid;
+    int n_values;
+    vector<Point> points;
+
+public:
+    Cluster(int cluster_id, int n_values) {
+        this->cluster_id = cluster_id;
+        this->n_values = n_values;
+        centroid.clear();
+    }
+
+    Cluster(int cluster_id, const vector<float>& centroid) {
+        this->cluster_id = cluster_id;
+        n_values = centroid.size();
+
+
+        this->centroid.clear();
+        for (int i=0; i < n_values; i++) {
+            this->centroid.push_back(centroid[i]);
+        }
+    }
+
+    int getID() { return cluster_id; }
+    int getNumValues() { return n_values; }
+    vector<float> getCentroid() { return centroid; }
+    float getCentroidValue(int i) { return centroid[i]; }
+    int getNumPoints() { return points.size(); }
+    vector<Point> getPoints() { return points; }
+    Point getPointAt(int index) { return points[index]; }
+
+    void setCentroid(const vector<float>& new_centroid) { centroid = new_centroid; }
+    void setCentroidValue(float value, int i) { centroid[i] = value; }
+    // functions by copy to keep the point vector cache friendly, I think this is probably
+    // for the best since we're going to be dividing clusters even further with MPI.
+    void addPoint(const Point& np) { points.push_back(np); }
+    void removePointAt(int index) { points.erase(points.begin()+index); }
+    void removePointByID(int point_id) {
+        // in theory, the oldest poinst in a cluster are probably correctly categorized.
+        // following this logic points that are to be removed are probably closer to the end.
+        // probably not a worth while optimization but it SHOULD actually improve performance,
+        // with high point counts and after the first few iterations of K-Means.
+        auto rit_rem = find_if(points.rbegin(), points.rend(), 
+            [point_id](const Point& p) {
+                return p.point_id == point_id;
+            });
+        points.erase(next(rit_rem).base());
+    }
+}
 
 class Node{
     public:
