@@ -11,18 +11,32 @@ using namespace std;
 
 #define MAX_ITERATIONS 2000
 
-struct point{
-    float distance;
-    vector<float> components; 
+class Point{
+    private:
+        int point_id;
+        int cluster_id;
+        int n_values;
+        vector<float> values;
+    public:
+        Point(int point_id, int cluster_id, int n_values, const vector<float>& values) {
+            this->point_id = point_id;
+            this->cluster_id = cluster_id;
+            this->n_values = n_values;
+            this->values.clear();
+            for (int i=0; i<n_values; i++){
+                this->values.push_back(values[i]);
+            }
+        };
+        int getPointId() { return point_id; }
+        int getClusterId() { return cluster_id; }
+        int getNumValues() { return n_values; }
+        vector<float> getValues() { return values; }
 
-    bool operator==(const point& other) const {
-        if (distance != other.distance) return false;
-
-        for (int i=0; i<components.size(); i++) {
-            if (components[i] != other.components[i])
+    bool operator==(const Point& other) const {
+        for (int i=0; i<n_values; i++) {
+            if (values[i] != other.values[i])
                 return false;
         }
-
         return true;
     }
 };
