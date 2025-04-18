@@ -10,6 +10,7 @@
 using namespace std;
 
 #define MAX_ITERATIONS 2000
+#define NONE_CLUSTER -1
 
 class Point
 {
@@ -33,9 +34,10 @@ public:
     };
     int getID() const { return point_id; }
     int getClusterID() const { return cluster_id; }
-    int getNumValues() const { return n_values; }
+    int getDim() const { return n_values; }
     vector<float> getValues() const { return values; }
 
+    void setClusterID(int new_cluster_id) { cluster_id = new_cluster_id; }
     bool operator==(const Point &other) const
     {
         for (int i = 0; i < n_values; i++)
@@ -47,11 +49,10 @@ public:
     }
 };
 
-struct dataResult
+struct pointData
 {
-    int nFilas;
-    int nColumnas;
-    float **distances;
+    uint32_t n_points;
+    uint32_t n_dim;
     vector<Point> points;
 };
 
@@ -103,12 +104,14 @@ public:
         // following this logic points that are to be removed are probably closer to the end.
         // probably not a worth while optimization but it SHOULD actually improve performance,
         // with high point counts and after the first few iterations of K-Means.
-        auto rit_rem = find_if(points.rbegin(), points.rend(),
-                               [point_id](const Point &p)
-                               {
-                                   return point_id == p.getID();
-                               });
-        points.erase(next(rit_rem).base());
+        vector<Point>::reverse_iterator rit_rem = find_if(points.rbegin(), points.rend(),
+                                                           [point_id](const Point &p)
+                                                           {
+                                                               return point_id == p.getID();
+                                                           });
+        // check if it was actually found
+        if (rit_rem != points.rend())
+            points.erase(next(rit_rem).base());
     }
 };
 
@@ -122,52 +125,45 @@ class Master_Node
 class Worker_Node
 {
 private:
-    //vector<Cluster> // Leaving this out for further versions, implementing only one cluster per node to start off.
+    // vector<Cluster> // Leaving this out for further versions, implementing only one cluster per node to start off.
     Cluster cluster;
-    
+
 public:
-    Worker_Node(int data_dimensions, int data_points, vector<Point> data, int worker_id, )
+    Worker_Node(int data_dimensions, int data_points, vector<Point> data, int worker_id);
 };
 
 /**
  * Read data from the file: "salida" and stores it inside a dataResult struct.
  * @returns dataResult
  */
-dataResult readData()
+pointData readData(const string& filename)
 {
-    FILE *inFile;
-    dataResult data;
-
-    int nFilas, nCol;
-    // Abrir archivo para lectura en binario
-    inFile = fopen("salida", "rb");
-    if (inFile == NULL)
-    {
-        fputs("File error", stderr);
-        exit(1);
+    ifstream file(filename, ios::binary);
+    if (!file) {
+        throw std::runtime_error("Could not open file: " + filename);
     }
+    pointData data;
+    uint32_t n_rows, n_cols;
+    
     // Leer el número de filas y columnas
-    fread(&nFilas, sizeof(int), 1, inFile);
-    fread(&nCol, sizeof(int), 1, inFile);
-    data.nFilas = nFilas;
-    data.nColumnas = nCol;
+    file.read(reinterpret_cast<char*>(&n_rows), sizeof(n_rows));
+    file.read(reinterpret_cast<char*>(&n_cols), sizeof(n_cols));
+    data.n_points = n_rows;
+    data.n_dim = n_cols;
 
     // Leer y guardar los puntos del fichero binario
-    for (int i = 0; i < nFilas; i++)
+    for (int i = 0; i < n_rows; i++)
     {
-        
-        std::vector<char> values(nCol, 0);
-        std::ifstream input("salina.bin", std::ios::in | std::ifstream::binary);
-        input.read(&values[0], values.size());
-
-        Point point = new Point(i, clusterid, nCol, values);
-        data.points.push_back(point);
+        vector<float> values(n_cols);
+        file.read(reinterpret_cast<char*>(&values[0]), n_cols * sizeof(float));
+        Point p(i, NONE_CLUSTER, n_cols, values);
+        data.points.push_back(move(p));
     }
-    // Cerrar archivo
-    fclose(inFile);
+
     return data;
 }
 
+/*
 point initialize_centroid(int nColumnas)
 {
     // Inicializar k centroides (aleatorios)
@@ -181,22 +177,29 @@ point initialize_centroid(int nColumnas)
     cout << "\n";
     return centroid;
 }
+*/
 
 /**
- * Calculates the squared euclidean distance of nDimensions, between the centroid and a point.
- * @param point
- * @param centroid
- * @param nColumnas Indicates the dimension of the points.
+ * Calculates the squared euclidean distance of nDimensions, between two points.
+ * @param p1
+ * @param p2
  * @returns Squared euclidean distance.
  */
-float squared_euclidean_distance(point p, point centroid, int nColumnas)
-{
-    float distance = 0;
-    for (int i = 0; i < nColumnas; i++)
+double sqrDist(const Point& p1, const Point& p2) {    
+    return sqrDist(p1.getValues(), p2.getValues());
+};
+
+double sqrDist(const vector<float>& v1, const vector<float>& v2) {
+    int n_dim = v1.size();
+    if (n_dim != v2.size())
+        throw invalid_argument("Can't measure distance between points with different dimensions [P1-%d <=> P2-%d]");
+
+    double sqr_dist = 0;
+    for (int i = 0; i < n_dim; i++)
     {
-        distance += (p.components[i] - centroid.components[i]) * (p.components[i] - centroid.components[i]);
+        sqr_dist += (v1[i] - v2[i]) * (v1[i] - v2[i]);
     }
-    return distance;
+    return sqr_dist;
 }
 
 /**
@@ -205,6 +208,7 @@ float squared_euclidean_distance(point p, point centroid, int nColumnas)
  * @param nColumnas Dimension of the points.
  * @returns New centroid.
  */
+/*
 point calculate_new_centroid(vector<point> points, int nColumnas)
 {
     point new_centroid;
@@ -220,7 +224,9 @@ point calculate_new_centroid(vector<point> points, int nColumnas)
     }
     return new_centroid;
 }
+*/
 
+/*
 bool equivalentPoints(point p1, point p2, int nColumnas)
 {
     for (int i = 0; i < nColumnas; i++)
@@ -230,47 +236,64 @@ bool equivalentPoints(point p1, point p2, int nColumnas)
     }
     return true;
 }
+*/
 
+/*
 point addDistance(point p, float d)
 {
     p.distance = d;
     return p;
 }
+*/
 
-void kMeans(dataResult data, int k)
+void kMeans(pointData data, int k)
 {
-    Node nodes[k];
+    vector<Cluster> clusters(k);
     cout << fixed << setprecision(6);
 
-    // Inicializar los centroides
+    // Inicializar los clusters
     for (int i = 0; i < k; i++)
     {
         cout << "\t" << "centroid " << i << endl;
-        nodes[i] = Node(initialize_centroid(data.nColumnas));
+        // Pick out equally spaced points from the data input vector (i.e random points)
+        int centroid_idx = (data.n_points / k) * i + data.n_points/k/2;
+        clusters[i] = Cluster(i, data.points[centroid_idx].getValues());
     }
 
     for (int iter = 0; iter < MAX_ITERATIONS; iter++)
     {
         cout << "iteration " << iter << endl;
 
-        for (int i = 0; i < data.points.size(); i++)
+        // *emabarrassingly parallel
+        for (int i = 0; i < data.n_points; i++)
         {
-            float *sqr_distances = (float *)malloc(sizeof(float) * k);
+            Point& p = data.points[i];
+            double min_dist;
 
             // Calcular las distancias entre los puntos y los centroides de los k nodos
             for (int j = 0; j < k; j++)
             {
-                sqr_distances[j] = squared_euclidean_distance(data.points[i], nodes[j].centroid, data.nColumnas);
+                double dist = sqrDist(p.getValues(), clusters[j].getCentroid());
+                if (dist < min_dist)
+                {
+                    min_dist = dist;
+                    p.setClusterID(k);
+                }
             }
+            // BERNAT - no estoy seguro de si es esto lo que hay que hacer, hasta aqui he llegado.
+            //          hay que implementar el algoritmo de k-medias y ya basicamente.
+            //          No me complicaria con intentar separarlo en los worker_nodes
+            //          de primeras, porque probablemente complique el codigo mas de lo
+            //          necesario para nada.
 
             // Comprobar cual es la menor distancia entre un punto y los centroides
             float min_dist = numeric_limits<float>::infinity();
             int min_id = -1;
             for (int j = 0; j < k; j++)
             {
-                if (sqr_distances[j] < min_dist)
+                if (cluster_distances[j] < min_dist)
                 {
-                    min_dist = sqr_distances[j];
+                    min_dist = cluster_distances[j];
                     min_id = j;
                 }
             }
@@ -281,32 +304,32 @@ void kMeans(dataResult data, int k)
                 vector<point>::iterator it;
                 // Si el vector de puntos no está vacío...
 
-                if (!nodes[j].points.empty())
+                if (!clusters[j].points.empty())
                 {
-                    it = nodes[j].findPoint(data.points[i]);
+                    it = clusters[j].findPoint(data.points[i]);
 
-                    int last = nodes[j].points.size() - 1;
+                    int last = clusters[j].points.size() - 1;
                     if (min_id == j)
                     {
-                        if (it != nodes[j].points.end() || equivalentPoints(data.points[i], nodes[j].points[last], data.nColumnas))
+                        if (it != clusters[j].points.end() || equivalentPoints(data.points[i], clusters[j].points[last], data.nColumnas))
                         {
                             // Si encuentra el punto en el mismo nodo en el que estaba, actualiza la distancia
-                            int p_id = distance(nodes[j].points.begin(), it);
-                            nodes[j].setDistanceInPoint(p_id, min_dist);
+                            int p_id = distance(clusters[j].points.begin(), it);
+                            clusters[j].setDistanceInPoint(p_id, min_dist);
                         }
                         else
                         {
                             // Si no encuentra el punto en el nodo cuya distancia entre estos es menor, lo añade
                             addDistance(data.points[i], min_dist);
-                            nodes[min_id].addPoint(data.points[i]);
+                            clusters[min_id].addPoint(data.points[i]);
                         }
                     }
                     else
                     {
-                        if (it != nodes[j].points.end() || equivalentPoints(data.points[i], nodes[j].points[last], data.nColumnas))
+                        if (it != clusters[j].points.end() || equivalentPoints(data.points[i], clusters[j].points[last], data.nColumnas))
                         {
                             // Si encuentra el punto en el nodo que no le pertenece, lo elimina
-                            nodes[j].removePointByIter(it);
+                            clusters[j].removePointByIter(it);
                             break;
                         }
                     }
@@ -316,10 +339,10 @@ void kMeans(dataResult data, int k)
                 {
                     if (min_id == j)
                     {
-                        nodes[min_id].addPoint(data.points[i]);
-                        it = nodes[min_id].points.end();
-                        int p_id = distance(nodes[min_id].points.begin(), it) - 1;
-                        nodes[min_id].setDistanceInPoint(p_id, min_dist);
+                        clusters[min_id].addPoint(data.points[i]);
+                        it = clusters[min_id].points.end();
+                        int p_id = distance(clusters[min_id].points.begin(), it) - 1;
+                        clusters[min_id].setDistanceInPoint(p_id, min_dist);
                     }
                 }
             }
@@ -327,12 +350,12 @@ void kMeans(dataResult data, int k)
 
         for (int i = 0; i < k; i++)
         {
-            if (!nodes[i].points.empty())
-                nodes[i].setCentroid(calculate_new_centroid(nodes[i].points, data.nColumnas));
+            if (!clusters[i].points.empty())
+                clusters[i].setCentroid(calculate_new_centroid(clusters[i].points, data.nColumnas));
             cout << "centroid " << i << "\t";
             for (int j = 0; j < data.nColumnas; j++)
             {
-                cout << nodes[i].centroid.components[j] << "\t";
+                cout << clusters[i].centroid.components[j] << "\t";
             }
             cout << "\n";
         }
@@ -351,7 +374,7 @@ int main(int argc, char **argv)
     int k = 4;
 
     // Obtencion de los puntos
-    dataResult data = readData();
+    pointData data = readData("salida");
 
     // Reserva el espacio que usarán las distancais de los puntos
     data.distances = (float **)malloc(sizeof(float *) * k);
