@@ -17,7 +17,7 @@ class Point
 private:
     int point_id;
     int cluster_id;
-    int n_values;
+    int n_dim;
     vector<float> values;
 
 public:
@@ -25,7 +25,7 @@ public:
     {
         this->point_id = point_id;
         this->cluster_id = cluster_id;
-        this->n_values = n_values;
+        this->n_dim = n_values;
         this->values.clear();
         for (int i = 0; i < n_values; i++)
         {
@@ -34,13 +34,13 @@ public:
     };
     int getID() const { return point_id; }
     int getClusterID() const { return cluster_id; }
-    int getDim() const { return n_values; }
+    int getDim() const { return n_dim; }
     vector<float> getValues() const { return values; }
 
     void setClusterID(int new_cluster_id) { cluster_id = new_cluster_id; }
     bool operator==(const Point &other) const
     {
-        for (int i = 0; i < n_values; i++)
+        for (int i = 0; i < n_dim; i++)
         {
             if (values[i] != other.values[i])
                 return false;
@@ -65,10 +65,11 @@ private:
     vector<Point> points;
 
 public:
-    Cluster(int cluster_id, int n_values)
+    Cluster() {}
+    Cluster(int cluster_id, int n_dim)
     {
         this->cluster_id = cluster_id;
-        this->n_values = n_values;
+        this->n_values = n_dim;
         centroid.clear();
     }
 
@@ -85,7 +86,7 @@ public:
     }
 
     int getID() const { return cluster_id; }
-    int getNumValues() const { return n_values; }
+    int getDim() const { return n_values; }
     vector<float> getCentroid() const { return centroid; }
     float getCentroidValue(int i) const { return centroid[i]; }
     int getNumPoints() const { return points.size(); }
@@ -185,10 +186,6 @@ point initialize_centroid(int nColumnas)
  * @param p2
  * @returns Squared euclidean distance.
  */
-double sqrDist(const Point& p1, const Point& p2) {    
-    return sqrDist(p1.getValues(), p2.getValues());
-};
-
 double sqrDist(const vector<float>& v1, const vector<float>& v2) {
     int n_dim = v1.size();
     if (n_dim != v2.size())
@@ -200,7 +197,11 @@ double sqrDist(const vector<float>& v1, const vector<float>& v2) {
         sqr_dist += (v1[i] - v2[i]) * (v1[i] - v2[i]);
     }
     return sqr_dist;
-}
+};
+
+double sqrDist(const Point& p1, const Point& p2) {    
+    return sqrDist(p1.getValues(), p2.getValues());
+};
 
 /**
  * Returns the new centroid by calculating the mean of every component of the points
@@ -260,24 +261,31 @@ void kMeans(pointData data, int k)
         clusters[i] = Cluster(i, data.points[centroid_idx].getValues());
     }
 
-    for (int iter = 0; iter < MAX_ITERATIONS; iter++)
+    int iteration = 0;
+    bool convergence_criterion = false;
+    while (iteration < MAX_ITERATIONS && !convergence_criterion)
     {
-        cout << "iteration " << iter << endl;
+        cout << "iteration " << iteration << endl;
+
+        int moved_points = 0;
 
         // *emabarrassingly parallel
         for (int i = 0; i < data.n_points; i++)
         {
             Point& p = data.points[i];
-            double min_dist;
+            double min_dist = numeric_limits<double>::infinity();
+            int closest_cluster_id;
 
             // Calcular las distancias entre los puntos y los centroides de los k nodos
             for (int j = 0; j < k; j++)
             {
                 double dist = sqrDist(p.getValues(), clusters[j].getCentroid());
+                
+                // Comprobar cual es la menor distancia entre un punto y los centroides
                 if (dist < min_dist)
                 {
                     min_dist = dist;
-                    p.setClusterID(k);
+                    closest_cluster_id = j;
                 }
             }
             // BERNAT - no estoy seguro de si es esto lo que hay que hacer, hasta aqui he llegado.
@@ -286,87 +294,61 @@ void kMeans(pointData data, int k)
             //          de primeras, porque probablemente complique el codigo mas de lo
             //          necesario para nada.
 
-            // Comprobar cual es la menor distancia entre un punto y los centroides
-            float min_dist = numeric_limits<float>::infinity();
-            int min_id = -1;
-            for (int j = 0; j < k; j++)
+            // Assign point to the new closest cluster
+            if (p.getClusterID() != closest_cluster_id)
             {
-                if (cluster_distances[j] < min_dist)
+                // Remove from previous cluster
+                if (p.getClusterID() != NONE_CLUSTER)
                 {
-                    min_dist = cluster_distances[j];
-                    min_id = j;
+                    clusters[p.getClusterID()].removePointByID(p.getID());
                 }
-            }
 
-            // Buscar el punto dentro de los otros nodos. Si se encuentra, se elimina de ese nodo
-            for (int j = 0; j < k; j++)
-            {
-                vector<point>::iterator it;
-                // Si el vector de puntos no está vacío...
-
-                if (!clusters[j].points.empty())
-                {
-                    it = clusters[j].findPoint(data.points[i]);
-
-                    int last = clusters[j].points.size() - 1;
-                    if (min_id == j)
-                    {
-                        if (it != clusters[j].points.end() || equivalentPoints(data.points[i], clusters[j].points[last], data.nColumnas))
-                        {
-                            // Si encuentra el punto en el mismo nodo en el que estaba, actualiza la distancia
-                            int p_id = distance(clusters[j].points.begin(), it);
-                            clusters[j].setDistanceInPoint(p_id, min_dist);
-                        }
-                        else
-                        {
-                            // Si no encuentra el punto en el nodo cuya distancia entre estos es menor, lo añade
-                            addDistance(data.points[i], min_dist);
-                            clusters[min_id].addPoint(data.points[i]);
-                        }
-                    }
-                    else
-                    {
-                        if (it != clusters[j].points.end() || equivalentPoints(data.points[i], clusters[j].points[last], data.nColumnas))
-                        {
-                            // Si encuentra el punto en el nodo que no le pertenece, lo elimina
-                            clusters[j].removePointByIter(it);
-                            break;
-                        }
-                    }
-                    // Si el vector de puntos está vacío...
-                }
-                else
-                {
-                    if (min_id == j)
-                    {
-                        clusters[min_id].addPoint(data.points[i]);
-                        it = clusters[min_id].points.end();
-                        int p_id = distance(clusters[min_id].points.begin(), it) - 1;
-                        clusters[min_id].setDistanceInPoint(p_id, min_dist);
-                    }
-                }
+                p.setClusterID(closest_cluster_id);
+                clusters[closest_cluster_id].addPoint(p);
+                moved_points++;
             }
         }
 
+        // Readjust new cluster centroid (cluster's points' average)
         for (int i = 0; i < k; i++)
         {
-            if (!clusters[i].points.empty())
-                clusters[i].setCentroid(calculate_new_centroid(clusters[i].points, data.nColumnas));
-            cout << "centroid " << i << "\t";
-            for (int j = 0; j < data.nColumnas; j++)
+            vector<float> new_centroid(clusters[i].getDim());
+
+            for (int j = 0; j < clusters[i].getNumPoints(); j++)
             {
-                cout << clusters[i].centroid.components[j] << "\t";
+                vector<float> point_values = clusters[i].getPointAt(j).getValues();
+                for (int l = 0; l < new_centroid.size(); l++)
+                {
+                    new_centroid[l] += point_values[l];
+                }
+            }
+            for (int j = 0; j < new_centroid.size(); j++)
+            {
+                new_centroid[j] /= clusters[i].getNumPoints();
+            }
+            clusters[i].setCentroid(new_centroid);
+
+            cout << "Cluster[" << i << "] centroid:\t";
+            for (int j = 0; j < clusters[i].getDim(); j++)
+            {
+                cout << clusters[i].getCentroid()[j] << "\t";
             }
             cout << "\n";
         }
         cout << endl;
+
+        if (moved_points < data.n_points * 0.05)
+        {
+            convergence_criterion = true;
+            cout << "n Moved Points(=" << moved_points << ") < 5% - convergence criterion met STOPPING K-MEANS" << endl;
+        }
+        else
+        {
+            cout << "n Moved Points: " << moved_points << endl;
+        }
+
+        iteration++;
     }
-
-    // Asignar punto a su centroide mas cercano. Para ello, calcular la distancia entre un punto y todos los nodos.
-
-    // Despues, cada nodo ajusta la media de todos los puntos
-
-    // Repetir proceso hasta que el total de puntos desplazados sea menor del 5% o se hayan alcanzado 2000 iteraciones
 }
 
 int main(int argc, char **argv)
@@ -375,20 +357,6 @@ int main(int argc, char **argv)
 
     // Obtencion de los puntos
     pointData data = readData("salida");
-
-    // Reserva el espacio que usarán las distancais de los puntos
-    data.distances = (float **)malloc(sizeof(float *) * k);
-    for (int i = 0; i < k; i++)
-    {
-        data.distances[i] = (float *)malloc(sizeof(float) * data.nFilas);
-    }
-
-    // for (int i = 0; i < data.points.size(); i++){
-    //     for (int j=0; j<data.nColumnas; j++){
-    //         cout << data.points[i].components[j] << "\t";
-    //     }
-    //     cout << "\n";
-    // }
 
     kMeans(data, k);
 
