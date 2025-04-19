@@ -165,28 +165,42 @@ pointData readData(const string& filename)
     return data;
 }
 
+void storeDataHeader(ofstream& file_stream, pointData data, vector<Cluster> clusters)
+{
+    uint32_t n_clusters = clusters.size();
+    cout << "HEADER: " << n_clusters << " " << data.n_points << " " << data.n_dim << endl;
+    file_stream.write(reinterpret_cast<char*>(&n_clusters), sizeof(n_clusters));
+    file_stream.write(reinterpret_cast<char*>(&data.n_points), sizeof(data.n_points));
+    file_stream.write(reinterpret_cast<char*>(&data.n_dim), sizeof(data.n_dim));
+}
+
+void storeIterationData(ofstream& file_stream, pointData data, vector<Cluster> clusters)
+{
+    uint32_t n_clusters = clusters.size();
+    // Store cluster centroid and id data
+    for (int i = 0; i < n_clusters; i++)
+    {
+        file_stream.write(reinterpret_cast<char*>(&clusters[i].getCentroid()[0]), sizeof(float) * clusters[i].getDim());
+        auto cluster_id = clusters[i].getID();
+        file_stream.write(reinterpret_cast<char*>(&cluster_id), sizeof(clusters[i].getID()));
+    }
+    // Store point coordinates and cluster_id data
+    for (int i = 0; i < data.n_points; i++)
+    {
+        file_stream.write(reinterpret_cast<char*>(&data.points[i].getValues()[0]), sizeof(float) * data.n_dim);
+        auto cluster_id = data.points[i].getClusterID();
+        file_stream.write(reinterpret_cast<char*>(&cluster_id), sizeof(cluster_id));
+    }
+}
+
 void storeData(const string& filename, pointData data, vector<Cluster> clusters)
 {
     ofstream file(filename, ios::binary);
     if (!file) {
         throw std::runtime_error("Could not open file: " + filename);
     }
-    uint32_t n_clusters = clusters.size();
-    file.write(reinterpret_cast<char*>(&n_clusters), sizeof(n_clusters));
-    file.write(reinterpret_cast<char*>(&data.n_points), sizeof(data.n_points));
-    file.write(reinterpret_cast<char*>(&data.n_dim), sizeof(data.n_dim));
-    for (int i = 0; i < n_clusters; i++)
-    {
-        file.write(reinterpret_cast<char*>(&clusters[i].getCentroid()[0]), sizeof(float) * clusters[i].getDim());
-        auto cluster_id = clusters[i].getID();
-        file.write(reinterpret_cast<char*>(&cluster_id), sizeof(clusters[i].getID()));
-    }
-    for (int i = 0; i < data.n_points; i++)
-    {
-        file.write(reinterpret_cast<char*>(&data.points[i].getValues()[0]), sizeof(float) * data.n_dim);
-        auto cluster_id = data.points[i].getClusterID();
-        file.write(reinterpret_cast<char*>(&cluster_id), sizeof(cluster_id));
-    }
+    storeDataHeader(file, data, clusters);
+    storeIterationData(file, data, clusters);
 }
 
 /*
@@ -316,9 +330,18 @@ void kMeans(pointData data, int k)
     for (int i = 0; i < k; i++)
     {
         // Pick out equally spaced points from the data input vector (i.e random points)
-        int centroid_idx = (data.n_points / k) * i + data.n_points/k/2;
+        //int centroid_idx = (data.n_points / k) * i + data.n_points/k/2;
+        int centroid_idx = i;
         clusters[i] = Cluster(i, data.points[centroid_idx].getValues());
     }
+
+    // Open file for iteration output
+    ofstream file("clustered_data", ios::binary);
+    if (!file) {
+        throw std::runtime_error("Could not open file: clustered_data");
+    }
+    // And write header
+    storeDataHeader(file, data, clusters);
 
     int iteration = 0;
     bool convergence_criterion = false;
@@ -387,23 +410,33 @@ void kMeans(pointData data, int k)
             clusters[i].setCentroid(new_centroid);
         }
 
+        storeIterationData(file, data, clusters);
+
+        iteration++;
+
+        // PRINTING
         printClusters(clusters);
 
         if (moved_points < data.n_points * 0.05)
         {
             convergence_criterion = true;
-            cout << "n Moved Points(=" << moved_points << ") < 5% - convergence criterion met STOPPING K-MEANS" << endl;
+            cout << "n Moved Points(=" << moved_points << ") < 5% - convergence criterion met STOPPING K-MEANS after \n\t"
+                <<  iteration-1 << " iterations" << endl;
         }
         else
         {
             cout << "n Moved Points: " << moved_points << endl;
         }
         cout << endl;
-
-        iteration++;
     }
 
-    storeData("clustered_data", data, clusters);
+    // Trying out per-iteration data storage
+    //storeData("clustered_data", data, clusters);
+}
+
+bool fileExists(const std::string& filename) {
+    std::ifstream file(filename);
+    return file.good();
 }
 
 int main(int argc, char **argv)
@@ -412,6 +445,22 @@ int main(int argc, char **argv)
 
     // Obtencion de los puntos
     pointData data = readData("salida");
+
+    // Hacer backup de los datos de salida preexistentes
+    if (fileExists("clustered_data"))
+    {
+        int backup_id = 0;
+        bool file_created = false;
+        while (!file_created)
+        {
+            string backup_name = "clustered_data_" + to_string(backup_id);
+            if (!fileExists(backup_name))
+            {
+                file_created = (rename("clustered_data", backup_name.c_str()) == 0);
+            }
+            backup_id++;
+        }
+    }
 
     kMeans(data, k);
 
