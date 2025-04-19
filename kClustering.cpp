@@ -36,6 +36,7 @@ public:
     int getClusterID() const { return cluster_id; }
     int getDim() const { return n_dim; }
     vector<float> getValues() const { return values; }
+    float getValueAt(const int idx) const { return values[idx]; }
 
     void setClusterID(int new_cluster_id) { cluster_id = new_cluster_id; }
     bool operator==(const Point &other) const
@@ -164,6 +165,30 @@ pointData readData(const string& filename)
     return data;
 }
 
+void storeData(const string& filename, pointData data, vector<Cluster> clusters)
+{
+    ofstream file(filename, ios::binary);
+    if (!file) {
+        throw std::runtime_error("Could not open file: " + filename);
+    }
+    uint32_t n_clusters = clusters.size();
+    file.write(reinterpret_cast<char*>(&n_clusters), sizeof(n_clusters));
+    file.write(reinterpret_cast<char*>(&data.n_points), sizeof(data.n_points));
+    file.write(reinterpret_cast<char*>(&data.n_dim), sizeof(data.n_dim));
+    for (int i = 0; i < n_clusters; i++)
+    {
+        file.write(reinterpret_cast<char*>(&clusters[i].getCentroid()[0]), sizeof(float) * clusters[i].getDim());
+        auto cluster_id = clusters[i].getID();
+        file.write(reinterpret_cast<char*>(&cluster_id), sizeof(clusters[i].getID()));
+    }
+    for (int i = 0; i < data.n_points; i++)
+    {
+        file.write(reinterpret_cast<char*>(&data.points[i].getValues()[0]), sizeof(float) * data.n_dim);
+        auto cluster_id = data.points[i].getClusterID();
+        file.write(reinterpret_cast<char*>(&cluster_id), sizeof(cluster_id));
+    }
+}
+
 /*
 point initialize_centroid(int nColumnas)
 {
@@ -247,6 +272,41 @@ point addDistance(point p, float d)
 }
 */
 
+void printClusters(vector<Cluster> clusters)
+{
+    const int MAX_PRINT_LEN = 5;
+    for (int i = 0; i < clusters.size(); i++)
+    {
+        cout << setprecision(6);
+        cout << "Cluster[" << i << "]\n\tCentroid:\t";
+        for (int j = 0; j < clusters[i].getDim(); j++)
+        {
+            cout << clusters[i].getCentroid()[j] << "\t";
+        }
+        cout << setprecision(2);
+        cout <<  "\n\tPoints(" << clusters[i].getNumPoints() << "):\n\t\t{";
+        for (int j = 0; j < clusters[i].getNumPoints(); j++)
+        {
+            if (j >= MAX_PRINT_LEN && j < (clusters[i].getNumPoints()-MAX_PRINT_LEN))
+            {
+                if (j == MAX_PRINT_LEN) cout << "...\n\t\t... ";
+                continue;
+            }
+            cout << "[";
+            for (int k = 0; k < clusters[i].getDim(); k++)
+            {
+                cout << clusters[i].getPointAt(j).getValueAt(k);
+                if (k < (clusters[i].getDim()-1)) cout << ",";
+            }
+            cout << "]";
+            if (j < (clusters[i].getNumPoints()-1))
+                cout << " ";
+        }
+        cout << "}\n\n";
+
+    }
+};
+
 void kMeans(pointData data, int k)
 {
     vector<Cluster> clusters(k);
@@ -255,7 +315,6 @@ void kMeans(pointData data, int k)
     // Inicializar los clusters
     for (int i = 0; i < k; i++)
     {
-        cout << "\t" << "centroid " << i << endl;
         // Pick out equally spaced points from the data input vector (i.e random points)
         int centroid_idx = (data.n_points / k) * i + data.n_points/k/2;
         clusters[i] = Cluster(i, data.points[centroid_idx].getValues());
@@ -316,10 +375,9 @@ void kMeans(pointData data, int k)
 
             for (int j = 0; j < clusters[i].getNumPoints(); j++)
             {
-                vector<float> point_values = clusters[i].getPointAt(j).getValues();
                 for (int l = 0; l < new_centroid.size(); l++)
                 {
-                    new_centroid[l] += point_values[l];
+                    new_centroid[l] += clusters[i].getPointAt(j).getValueAt(l);
                 }
             }
             for (int j = 0; j < new_centroid.size(); j++)
@@ -327,15 +385,9 @@ void kMeans(pointData data, int k)
                 new_centroid[j] /= clusters[i].getNumPoints();
             }
             clusters[i].setCentroid(new_centroid);
-
-            cout << "Cluster[" << i << "] centroid:\t";
-            for (int j = 0; j < clusters[i].getDim(); j++)
-            {
-                cout << clusters[i].getCentroid()[j] << "\t";
-            }
-            cout << "\n";
         }
-        cout << endl;
+
+        printClusters(clusters);
 
         if (moved_points < data.n_points * 0.05)
         {
@@ -346,9 +398,12 @@ void kMeans(pointData data, int k)
         {
             cout << "n Moved Points: " << moved_points << endl;
         }
+        cout << endl;
 
         iteration++;
     }
+
+    storeData("clustered_data", data, clusters);
 }
 
 int main(int argc, char **argv)
