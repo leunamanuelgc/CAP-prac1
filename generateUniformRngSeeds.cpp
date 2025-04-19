@@ -20,8 +20,8 @@ vector<float> getRandomPoint(uint32_t dim, float min, float max)
 
 int main()
 {
-    const int N_CLUSTERS = 4;
-    const int N_POINTS = 50;
+    const int N_CLUSTERS = 5;
+    const int N_POINTS = 5000;
     const int N_DIMS = 3;
 
     const float MIN_VAL = -1.0;
