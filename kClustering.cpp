@@ -330,8 +330,8 @@ void kMeans(pointData data, int k)
     for (int i = 0; i < k; i++)
     {
         // Pick out equally spaced points from the data input vector (i.e random points)
-        //int centroid_idx = (data.n_points / k) * i + data.n_points/k/2;
-        int centroid_idx = i;
+        int centroid_idx = (data.n_points / k) * i + data.n_points/k/2;
+        //int centroid_idx = i;
         clusters[i] = Cluster(i, data.points[centroid_idx].getValues());
     }
 
@@ -417,7 +417,7 @@ void kMeans(pointData data, int k)
         // PRINTING
         printClusters(clusters);
 
-        if (moved_points < data.n_points * 0.05)
+        if (moved_points < (data.n_points * 0.0005))
         {
             convergence_criterion = true;
             cout << "n Moved Points(=" << moved_points << ") < 5% - convergence criterion met STOPPING K-MEANS after \n\t"
@@ -441,7 +441,7 @@ bool fileExists(const std::string& filename) {
 
 int main(int argc, char **argv)
 {
-    int k = 4;
+    int k = 10;
 
     // Obtencion de los puntos
     pointData data = readData("salida");

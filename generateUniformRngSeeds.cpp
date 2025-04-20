@@ -21,11 +21,11 @@ vector<float> getRandomPoint(uint32_t dim, float min, float max)
 int main()
 {
     const int N_CLUSTERS = 5;
-    const int N_POINTS = 5000;
-    const int N_DIMS = 3;
+    const int N_POINTS = 500;
+    const int N_DIMS = 5;
 
-    const float MIN_VAL = -1.0;
-    const float MAX_VAL = 1.0;
+    const float MIN_VAL = -10.0;
+    const float MAX_VAL = 10.0;
 
     FILE* resultsFile;
     resultsFile = fopen("salida", "wb");
@@ -33,8 +33,6 @@ int main()
     int nCol = N_DIMS;
     fwrite(&nFilas, sizeof(int), 1, resultsFile);
     fwrite(&nCol, sizeof(int), 1, resultsFile);
-
-    vector<vector<float>> data;
 
     for(int i = 0; i < N_POINTS; i++)
     {
