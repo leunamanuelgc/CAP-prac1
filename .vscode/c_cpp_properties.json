@@ -9,7 +9,7 @@
             "cStandard": "c11",
             "cppStandard": "c++11",
             "intelliSenseMode": "linux-gcc-x64",
-            "compilerPath": "/usr/bin/g++-12"
+            "compilerPath": "/usr/local/bin/mpic++"
         }
     ],
     "version": 4
