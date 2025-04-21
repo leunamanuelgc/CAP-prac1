@@ -351,7 +351,6 @@ void kMeans(pointData data, int k)
 
         int moved_points = 0;
 
-        // *emabarrassingly parallel
         for (int i = 0; i < data.n_points; i++)
         {
             Point& p = data.points[i];
@@ -359,6 +358,7 @@ void kMeans(pointData data, int k)
             int closest_cluster_id;
 
             // Calcular las distancias entre los puntos y los centroides de los k nodos
+            // *emabarrassingly parallel
             for (int j = 0; j < k; j++)
             {
                 double dist = sqrDist(p.getValues(), clusters[j].getCentroid());
@@ -370,11 +370,8 @@ void kMeans(pointData data, int k)
                     closest_cluster_id = j;
                 }
             }
-            // BERNAT - no estoy seguro de si es esto lo que hay que hacer, hasta aqui he llegado.
-            //          hay que implementar el algoritmo de k-medias y ya basicamente.
-            //          No me complicaria con intentar separarlo en los worker_nodes
-            //          de primeras, porque probablemente complique el codigo mas de lo
-            //          necesario para nada.
+
+            //  sync
 
             // Assign point to the new closest cluster
             if (p.getClusterID() != closest_cluster_id)
@@ -390,6 +387,8 @@ void kMeans(pointData data, int k)
                 moved_points++;
             }
         }
+
+        // sync -> reduction (average)
 
         // Readjust new cluster centroid (cluster's points' average)
         for (int i = 0; i < k; i++)
@@ -417,7 +416,7 @@ void kMeans(pointData data, int k)
         // PRINTING
         printClusters(clusters);
 
-        if (moved_points < (data.n_points * 0.0005))
+        if (moved_points < (data.n_points * 0.05))
         {
             convergence_criterion = true;
             cout << "n Moved Points(=" << moved_points << ") < 5% - convergence criterion met STOPPING K-MEANS after \n\t"
@@ -441,7 +440,7 @@ bool fileExists(const std::string& filename) {
 
 int main(int argc, char **argv)
 {
-    int k = 10;
+    int k = 7;
 
     // Obtencion de los puntos
     pointData data = readData("salida");
