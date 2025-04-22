@@ -10,3 +10,6 @@
 ### Above combination will ignore all files without extension ###
 clustered_data
 salida
+.vscode/c_cpp_properties.json
+kClustering
+*.log

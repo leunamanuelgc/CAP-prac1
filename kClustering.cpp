@@ -4,13 +4,19 @@
 #include <vector>
 #include <algorithm>
 #include <limits>
-#include <omp.h>
+//#include <omp.h>
 #include <iomanip>
+#include <chrono>
 
 using namespace std;
 
-#define MAX_ITERATIONS 2000
 #define NONE_CLUSTER -1
+
+#define VERBOSE 2
+#define LOG 1
+
+//#define PRINT LOG
+#define PRINT VERBOSE
 
 class Point
 {
@@ -168,7 +174,6 @@ pointData readData(const string& filename)
 void storeDataHeader(ofstream& file_stream, pointData data, vector<Cluster> clusters)
 {
     uint32_t n_clusters = clusters.size();
-    cout << "HEADER: " << n_clusters << " " << data.n_points << " " << data.n_dim << endl;
     file_stream.write(reinterpret_cast<char*>(&n_clusters), sizeof(n_clusters));
     file_stream.write(reinterpret_cast<char*>(&data.n_points), sizeof(data.n_points));
     file_stream.write(reinterpret_cast<char*>(&data.n_dim), sizeof(data.n_dim));
@@ -231,6 +236,7 @@ double sqrDist(const vector<float>& v1, const vector<float>& v2) {
         throw invalid_argument("Can't measure distance between points with different dimensions [P1-%d <=> P2-%d]");
 
     double sqr_dist = 0;
+    #pragma omp parallel for default(shared) reduction(+:sqr_dist)
     for (int i = 0; i < n_dim; i++)
     {
         sqr_dist += (v1[i] - v2[i]) * (v1[i] - v2[i]);
@@ -321,8 +327,31 @@ void printClusters(vector<Cluster> clusters)
     }
 };
 
+void printMovedPoints(int n_moved, int convrg_pct, int iter, bool converged)
+{
+    if (converged)
+    {
+        cout << "n Moved Points(=" << n_moved << ") < "<< convrg_pct*100 << "% - convergence criterion met STOPPING K-MEANS after \n\t"
+        <<  iter-1 << " iterations" << endl;
+    }
+    else
+    {
+        cout << "n Moved Points: " << n_moved << endl;
+    }
+}
+
 void kMeans(pointData data, int k)
 {
+    const int MAX_ITERATIONS = 30;
+    const float MIN_PTS_MVMT_PCT = 0.05;
+    // Benchmarking
+	auto start = chrono::high_resolution_clock::now();
+	auto end = start;
+	chrono::duration<double> elapsed;
+	double elapsed_time;
+    double distance_compute_time;
+    
+    
     vector<Cluster> clusters(k);
     cout << fixed << setprecision(6);
 
@@ -347,8 +376,6 @@ void kMeans(pointData data, int k)
     bool convergence_criterion = false;
     while (iteration < MAX_ITERATIONS && !convergence_criterion)
     {
-        cout << "iteration " << iteration << endl;
-
         int moved_points = 0;
 
         for (int i = 0; i < data.n_points; i++)
@@ -357,19 +384,29 @@ void kMeans(pointData data, int k)
             double min_dist = numeric_limits<double>::infinity();
             int closest_cluster_id;
 
+            start = chrono::high_resolution_clock::now();
+            // call the algorithm #1 here
             // Calcular las distancias entre los puntos y los centroides de los k nodos
             // *emabarrassingly parallel
+            //#pragma omp parallel for
             for (int j = 0; j < k; j++)
             {
                 double dist = sqrDist(p.getValues(), clusters[j].getCentroid());
                 
-                // Comprobar cual es la menor distancia entre un punto y los centroides
-                if (dist < min_dist)
+                //#pragma omp critical
                 {
-                    min_dist = dist;
-                    closest_cluster_id = j;
+                    // Comprobar cual es la menor distancia entre un punto y los centroides
+                    if (dist < min_dist)
+                    {
+                        min_dist = dist;
+                        closest_cluster_id = j;
+                    }
                 }
             }
+            end = chrono::high_resolution_clock::now();
+            elapsed = end - start;
+            elapsed_time = elapsed.count();
+            distance_compute_time += elapsed_time;
 
             //  sync
 
@@ -409,28 +446,35 @@ void kMeans(pointData data, int k)
             clusters[i].setCentroid(new_centroid);
         }
 
-        storeIterationData(file, data, clusters);
-
         iteration++;
 
-        // PRINTING
-        printClusters(clusters);
-
-        if (moved_points < (data.n_points * 0.05))
+        if (moved_points < (data.n_points * MIN_PTS_MVMT_PCT))
         {
             convergence_criterion = true;
-            cout << "n Moved Points(=" << moved_points << ") < 5% - convergence criterion met STOPPING K-MEANS after \n\t"
-                <<  iteration-1 << " iterations" << endl;
         }
-        else
-        {
-            cout << "n Moved Points: " << moved_points << endl;
-        }
+
+        storeIterationData(file, data, clusters);
+
+
+        // PRINTING
+        #if PRINT >= VERBOSE
+        cout << "iteration " << iteration << endl;
+        printClusters(clusters);
+        printMovedPoints(moved_points, MIN_PTS_MVMT_PCT, iteration, convergence_criterion);
         cout << endl;
+        #endif
     }
 
     // Trying out per-iteration data storage
     //storeData("clustered_data", data, clusters);
+
+    // Benchmarking
+    #if PRINT >= VERBOSE
+    cout << "Total distance compute time: " << distance_compute_time << "(avg. per iteration: " << distance_compute_time/(iteration-1) << ")\n";
+    #elif PRINT >= LOG
+    cout << "total dist. compute T" << ", " << "avg. T per iter" << endl;
+    cout << distance_compute_time << ", " << distance_compute_time/(iteration-1) << endl;
+    #endif
 }
 
 bool fileExists(const std::string& filename) {
@@ -440,13 +484,13 @@ bool fileExists(const std::string& filename) {
 
 int main(int argc, char **argv)
 {
-    int k = 7;
+    const int N_CLUSTERS = 10;
 
     // Obtencion de los puntos
     pointData data = readData("salida");
 
     // Hacer backup de los datos de salida preexistentes
-    if (fileExists("clustered_data"))
+    if (fileExists("clustered_data") && argv[0] == "b")
     {
         int backup_id = 0;
         bool file_created = false;
@@ -461,7 +505,7 @@ int main(int argc, char **argv)
         }
     }
 
-    kMeans(data, k);
+    kMeans(data, N_CLUSTERS);
 
     return 0;
 }
