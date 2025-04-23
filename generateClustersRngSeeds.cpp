@@ -46,11 +46,11 @@ vector<float> getNBallPoint(vector<float> k, uint32_t dim, float max_radius, flo
 int main()
 {
     const int N_CLUSTERS = 8;
-    const int N_POINTS_PER_CLUSTER = 2500;
+    const int N_POINTS_PER_CLUSTER = 500;
     const int N_DIMS = 3;
 
     const float MIN_VAL = 0;
-    const float MAX_VAL = 150;
+    const float MAX_VAL = 90;
     const float CLUSTER_DENSITY = 3;
 
     // seed rng 'randomly' to get different results per run
