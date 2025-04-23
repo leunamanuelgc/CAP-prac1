@@ -15,8 +15,8 @@ using namespace std;
 #define VERBOSE 2
 #define LOG 1
 
-//#define PRINT LOG
-#define PRINT VERBOSE
+#define PRINT LOG
+//#define PRINT VERBOSE
 
 class Point
 {
@@ -349,7 +349,7 @@ void kMeans(pointData data, int k)
 	auto end = start;
 	chrono::duration<double> elapsed;
 	double elapsed_time;
-    double distance_compute_time;
+    double total_dist_calc_t;
     
     
     vector<Cluster> clusters(k);
@@ -358,9 +358,15 @@ void kMeans(pointData data, int k)
     // Inicializar los clusters
     for (int i = 0; i < k; i++)
     {
-        // Pick out equally spaced points from the data input vector (i.e random points)
+        // Pick out equally spaced points from the data input vector (i.e random points, except not bc yes)
         int centroid_idx = (data.n_points / k) * i + data.n_points/k/2;
+
+        // RANDOM INIT
         //int centroid_idx = i;
+
+        // RANDOM INIT
+        //int centroid_idx = (int)((float)rand()/RAND_MAX * data.n_points);\
+        //cout << "AAAAAAAAAAAAAAAAA: \t" << centroid_idx << endl;
         clusters[i] = Cluster(i, data.points[centroid_idx].getValues());
     }
 
@@ -378,6 +384,8 @@ void kMeans(pointData data, int k)
     {
         int moved_points = 0;
 
+        double dist_calc_t  = 0;
+
         for (int i = 0; i < data.n_points; i++)
         {
             Point& p = data.points[i];
@@ -388,12 +396,12 @@ void kMeans(pointData data, int k)
             // call the algorithm #1 here
             // Calcular las distancias entre los puntos y los centroides de los k nodos
             // *emabarrassingly parallel
-            //#pragma omp parallel for
+            #pragma omp parallel for
             for (int j = 0; j < k; j++)
             {
                 double dist = sqrDist(p.getValues(), clusters[j].getCentroid());
                 
-                //#pragma omp critical
+                #pragma omp critical
                 {
                     // Comprobar cual es la menor distancia entre un punto y los centroides
                     if (dist < min_dist)
@@ -406,7 +414,7 @@ void kMeans(pointData data, int k)
             end = chrono::high_resolution_clock::now();
             elapsed = end - start;
             elapsed_time = elapsed.count();
-            distance_compute_time += elapsed_time;
+            dist_calc_t += elapsed_time;
 
             //  sync
 
@@ -430,7 +438,9 @@ void kMeans(pointData data, int k)
         // Readjust new cluster centroid (cluster's points' average)
         for (int i = 0; i < k; i++)
         {
-            vector<float> new_centroid(clusters[i].getDim());
+            if (clusters[i].getNumPoints() == 0) continue;
+
+            vector<float> new_centroid(clusters[i].getDim(), 0);
 
             for (int j = 0; j < clusters[i].getNumPoints(); j++)
             {
@@ -453,6 +463,8 @@ void kMeans(pointData data, int k)
             convergence_criterion = true;
         }
 
+        total_dist_calc_t += dist_calc_t;
+
         storeIterationData(file, data, clusters);
 
 
@@ -462,6 +474,8 @@ void kMeans(pointData data, int k)
         printClusters(clusters);
         printMovedPoints(moved_points, MIN_PTS_MVMT_PCT, iteration, convergence_criterion);
         cout << endl;
+        #elif PRINT >= LOG
+        cout << "[" << iteration-1 <<"] dist. T, " << dist_calc_t << endl;
         #endif
     }
 
@@ -470,10 +484,10 @@ void kMeans(pointData data, int k)
 
     // Benchmarking
     #if PRINT >= VERBOSE
-    cout << "Total distance compute time: " << distance_compute_time << "(avg. per iteration: " << distance_compute_time/(iteration-1) << ")\n";
+    cout << "Total distance compute time: " << total_dist_calc_t << "(avg. per iteration: " << total_dist_calc_t/(iteration-1) << ")\n";
     #elif PRINT >= LOG
-    cout << "total dist. compute T" << ", " << "avg. T per iter" << endl;
-    cout << distance_compute_time << ", " << distance_compute_time/(iteration-1) << endl;
+    //cout << "total dist. compute T" << ", " << "avg. T per iter" << endl;
+    //cout << total_dist_calc_t << ", " << total_dist_calc_t/(iteration-1) << endl;
     #endif
 }
 
@@ -484,7 +498,7 @@ bool fileExists(const std::string& filename) {
 
 int main(int argc, char **argv)
 {
-    const int N_CLUSTERS = 10;
+    const int N_CLUSTERS = 8;
 
     // Obtencion de los puntos
     pointData data = readData("salida");
@@ -504,6 +518,8 @@ int main(int argc, char **argv)
             backup_id++;
         }
     }
+
+    //srand(time(NULL));
 
     kMeans(data, N_CLUSTERS);
 
