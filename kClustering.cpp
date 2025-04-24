@@ -56,11 +56,26 @@ public:
     }
 };
 
-struct pointData
+struct PointData
 {
     uint32_t n_points;
     uint32_t n_dim;
     vector<Point> points;
+};
+
+struct CentroidDiff
+{
+    vector<double> add_points_sum;
+    int add_points_count;
+    vector<double> rem_points_sum;
+    int rem_points_count;
+
+    CentroidDiff() {}
+    CentroidDiff(uint32_t dim) : add_points_count(0), rem_points_count(0)
+    {
+        add_points_sum = vector<double>(dim, 0);
+        rem_points_sum = vector<double>(dim, 0);
+    }
 };
 
 class Cluster
@@ -144,13 +159,13 @@ public:
  * Read data from the file: "salida" and stores it inside a dataResult struct.
  * @returns dataResult
  */
-pointData readData(const string& filename)
+PointData readData(const string& filename)
 {
     ifstream file(filename, ios::binary);
     if (!file) {
         throw std::runtime_error("Could not open file: " + filename);
     }
-    pointData data;
+    PointData data;
     uint32_t n_rows, n_cols;
     
     // Leer el número de filas y columnas
@@ -171,7 +186,7 @@ pointData readData(const string& filename)
     return data;
 }
 
-void storeDataHeader(ofstream& file_stream, pointData data, vector<Cluster> clusters)
+void storeDataHeader(ofstream& file_stream, PointData data, vector<Cluster> clusters)
 {
     uint32_t n_clusters = clusters.size();
     file_stream.write(reinterpret_cast<char*>(&n_clusters), sizeof(n_clusters));
@@ -179,7 +194,7 @@ void storeDataHeader(ofstream& file_stream, pointData data, vector<Cluster> clus
     file_stream.write(reinterpret_cast<char*>(&data.n_dim), sizeof(data.n_dim));
 }
 
-void storeIterationData(ofstream& file_stream, pointData data, vector<Cluster> clusters)
+void storeIterationData(ofstream& file_stream, PointData data, vector<Cluster> clusters)
 {
     uint32_t n_clusters = clusters.size();
     // Store cluster centroid and id data
@@ -198,7 +213,7 @@ void storeIterationData(ofstream& file_stream, pointData data, vector<Cluster> c
     }
 }
 
-void storeData(const string& filename, pointData data, vector<Cluster> clusters)
+void storeData(const string& filename, PointData data, vector<Cluster> clusters)
 {
     ofstream file(filename, ios::binary);
     if (!file) {
@@ -241,6 +256,7 @@ double sqrDist(const vector<float>& v1, const vector<float>& v2) {
     {
         sqr_dist += (v1[i] - v2[i]) * (v1[i] - v2[i]);
     }
+    
     return sqr_dist;
 };
 
@@ -340,7 +356,7 @@ void printMovedPoints(int n_moved, int convrg_pct, int iter, bool converged)
     }
 }
 
-void kMeans(pointData data, int k)
+void kMeans(PointData data, int k)
 {
     const int MAX_ITERATIONS = 30;
     const float MIN_PTS_MVMT_PCT = 0.05;
@@ -365,7 +381,7 @@ void kMeans(pointData data, int k)
         //int centroid_idx = i;
 
         // RANDOM INIT
-        //int centroid_idx = (int)((float)rand()/RAND_MAX * data.n_points);\
+        //int centroid_idx = (int)((float)rand()/RAND_MAX * data.n_points);
         //cout << "AAAAAAAAAAAAAAAAA: \t" << centroid_idx << endl;
         clusters[i] = Cluster(i, data.points[centroid_idx].getValues());
     }
@@ -380,11 +396,14 @@ void kMeans(pointData data, int k)
 
     int iteration = 0;
     bool convergence_criterion = false;
+
+    uint32_t old_cluster_p_count[k] = {0};
     while (iteration < MAX_ITERATIONS && !convergence_criterion)
     {
         int moved_points = 0;
 
         double dist_calc_t  = 0;
+        CentroidDiff centroidDiffs[k] = {CentroidDiff(data.n_dim)};
 
         for (int i = 0; i < data.n_points; i++)
         {
@@ -439,39 +458,67 @@ void kMeans(pointData data, int k)
             // Assign point to the new closest cluster
             if (p.getClusterID() != closest_cluster_id)
             {
+                int old_cluster_id = p.getClusterID();
                 // Remove from previous cluster
-                if (p.getClusterID() != NONE_CLUSTER)
+                if (old_cluster_id != NONE_CLUSTER)
                 {
-                    clusters[p.getClusterID()].removePointByID(p.getID());
+                    clusters[old_cluster_id].removePointByID(p.getID());
+                    
+                    // Cendtroid diff calculation
+                    centroidDiffs[old_cluster_id].rem_points_count++;
+                    for (int j = 0; j < centroidDiffs[old_cluster_id].rem_points_sum.size(); j++)
+                    {
+                        centroidDiffs[old_cluster_id].rem_points_sum[j] += p.getValueAt(j);
+                    }
+                }
+                
+                clusters[closest_cluster_id].addPoint(p);
+
+                // Cendtroid diff calculation
+                centroidDiffs[closest_cluster_id].add_points_count++;
+                for (int j = 0; j < centroidDiffs[closest_cluster_id].add_points_sum.size(); j++)
+                {
+                    centroidDiffs[closest_cluster_id].add_points_sum[j] += p.getValueAt(j);
                 }
 
                 p.setClusterID(closest_cluster_id);
-                clusters[closest_cluster_id].addPoint(p);
                 moved_points++;
             }
         }
 
-        // sync -> reduction (average)
+        // sync -> reduction (~average) (actually we will do a weithed
+        //         mean calculation as a reduction method for the centroid)
 
         // Readjust new cluster centroid (cluster's points' average)
-        //#pragma omp parallel for default(none)
+        //#pragma omp parallel for
         for (int i = 0; i < k; i++)
         {
-            if (clusters[i].getNumPoints() == 0) continue;
+            if (centroidDiffs[i].add_points_count + centroidDiffs[i].rem_points_count == 0)
+                continue;
 
-            vector<float> new_centroid(clusters[i].getDim(), 0);
-
-            for (int j = 0; j < clusters[i].getNumPoints(); j++)
+            // copy old centroid
+            vector<float> new_centroid(clusters[i].getCentroid());
+            if (centroidDiffs[i].add_points_count > 0)
             {
-                for (int l = 0; l < new_centroid.size(); l++)
+                for (int j = 0; j < new_centroid.size(); j++)
                 {
-                    new_centroid[l] += clusters[i].getPointAt(j).getValueAt(l);
+                    float add_points_mean_val = centroidDiffs[i].add_points_sum[j] / centroidDiffs[i].add_points_count;
+                    new_centroid[j] +=
+                        add_points_mean_val *
+                        (float)centroidDiffs[i].add_points_count/clusters[i].getNumPoints();
                 }
             }
-            for (int j = 0; j < new_centroid.size(); j++)
+            if (centroidDiffs[i].rem_points_count > 0)
             {
-                new_centroid[j] /= clusters[i].getNumPoints();
+                for (int j = 0; j < new_centroid.size(); j++)
+                {
+                    float rem_points_mean_val = centroidDiffs[i].add_points_sum[j] / centroidDiffs[i].add_points_count;
+                    new_centroid[j] -=
+                        rem_points_mean_val *
+                        (float)centroidDiffs[i].rem_points_count/old_cluster_p_count[i];
+                }
             }
+            
             clusters[i].setCentroid(new_centroid);
         }
 
@@ -520,7 +567,7 @@ int main(int argc, char **argv)
     const int N_CLUSTERS = 8;
 
     // Obtencion de los puntos
-    pointData data = readData("salida");
+    PointData data = readData("salida");
 
     // Hacer backup de los datos de salida preexistentes
     if (fileExists("clustered_data") && argv[0] == "b")
