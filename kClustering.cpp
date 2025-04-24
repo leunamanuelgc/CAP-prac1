@@ -393,21 +393,39 @@ void kMeans(pointData data, int k)
             int closest_cluster_id;
 
             start = chrono::high_resolution_clock::now();
-            // call the algorithm #1 here
+            
             // Calcular las distancias entre los puntos y los centroides de los k nodos
             // *emabarrassingly parallel
-            #pragma omp parallel for
-            for (int j = 0; j < k; j++)
+
+            #pragma omp parallel shared(p,clusters, min_dist)
             {
-                double dist = sqrDist(p.getValues(), clusters[j].getCentroid());
-                
+                double th_min_dist = numeric_limits<double>::infinity();
+                int th_closest_cluster_id;
+    
+                #pragma omp for nowait
+                for (int j = 0; j < k; j++)
+                {
+                    double dist = sqrDist(p.getValues(), clusters[j].getCentroid());
+                    if (dist < th_min_dist)
+                    {
+                        th_min_dist = dist;
+                        th_closest_cluster_id = j;
+                    }
+                }
+
+                // Bernat:
+                // critical section extracted from thread group loop
+                // to avoid reocurring locks between threads, since 
+                // threads are handed out a portion of the loop to
+                // run, the critical section would be hit constantly
+                // greatly increasing wait times for the 'mutex' to clear
                 #pragma omp critical
                 {
                     // Comprobar cual es la menor distancia entre un punto y los centroides
-                    if (dist < min_dist)
+                    if (th_min_dist < min_dist)
                     {
-                        min_dist = dist;
-                        closest_cluster_id = j;
+                        min_dist = th_min_dist;
+                        closest_cluster_id = th_closest_cluster_id;
                     }
                 }
             }
@@ -436,6 +454,7 @@ void kMeans(pointData data, int k)
         // sync -> reduction (average)
 
         // Readjust new cluster centroid (cluster's points' average)
+        //#pragma omp parallel for default(none)
         for (int i = 0; i < k; i++)
         {
             if (clusters[i].getNumPoints() == 0) continue;
