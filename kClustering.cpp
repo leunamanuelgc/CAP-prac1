@@ -345,11 +345,16 @@ void kMeans(pointData data, int k)
     const int MAX_ITERATIONS = 30;
     const float MIN_PTS_MVMT_PCT = 0.05;
     // Benchmarking
-	auto start = chrono::high_resolution_clock::now();
-	auto end = start;
-	chrono::duration<double> elapsed;
-	double elapsed_time;
+	auto dist_start = chrono::high_resolution_clock::now();
+    auto it_start = chrono::high_resolution_clock::now();
+	auto dist_end = dist_start;
+    auto it_end = it_start;
+	chrono::duration<double> dist_elapsed;
+    chrono::duration<double> it_elapsed;
+	double dist_elapsed_time;
+    double it_elapsed_time;
     double total_dist_calc_t;
+    double total_it_calc_t;
     
     
     vector<Cluster> clusters(k);
@@ -382,6 +387,9 @@ void kMeans(pointData data, int k)
     bool convergence_criterion = false;
     while (iteration < MAX_ITERATIONS && !convergence_criterion)
     {
+        double it_calc_t = 0;
+        it_start = chrono::high_resolution_clock::now();
+
         int moved_points = 0;
 
         double dist_calc_t  = 0;
@@ -392,7 +400,7 @@ void kMeans(pointData data, int k)
             double min_dist = numeric_limits<double>::infinity();
             int closest_cluster_id;
 
-            start = chrono::high_resolution_clock::now();
+            dist_start = chrono::high_resolution_clock::now();
             // call the algorithm #1 here
             // Calcular las distancias entre los puntos y los centroides de los k nodos
             // *emabarrassingly parallel
@@ -411,10 +419,10 @@ void kMeans(pointData data, int k)
                     }
                 }
             }
-            end = chrono::high_resolution_clock::now();
-            elapsed = end - start;
-            elapsed_time = elapsed.count();
-            dist_calc_t += elapsed_time;
+            dist_end = chrono::high_resolution_clock::now();
+            dist_elapsed = dist_end - dist_start;
+            dist_elapsed_time = dist_elapsed.count();
+            dist_calc_t += dist_elapsed_time;
 
             //  sync
 
@@ -434,7 +442,7 @@ void kMeans(pointData data, int k)
         }
 
         // sync -> reduction (average)
-
+        
         // Readjust new cluster centroid (cluster's points' average)
         for (int i = 0; i < k; i++)
         {
@@ -463,7 +471,12 @@ void kMeans(pointData data, int k)
             convergence_criterion = true;
         }
 
-        total_dist_calc_t += dist_calc_t;
+        it_end = chrono::high_resolution_clock::now();
+        it_elapsed = it_end - it_start;
+        it_elapsed_time = it_elapsed.count();
+        it_calc_t = it_elapsed_time;
+
+        total_it_calc_t += it_calc_t;
 
         storeIterationData(file, data, clusters);
 
@@ -475,7 +488,10 @@ void kMeans(pointData data, int k)
         printMovedPoints(moved_points, MIN_PTS_MVMT_PCT, iteration, convergence_criterion);
         cout << endl;
         #elif PRINT >= LOG
-        cout << "[" << iteration-1 <<"] dist. T, " << dist_calc_t << endl;
+        cout << "[" << iteration-1 << "], " ;
+        cout << "it. T, " << it_calc_t << ", ";
+        cout << "dist. T, " << dist_calc_t;
+        cout << endl;
         #endif
     }
 
