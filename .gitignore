@@ -14,3 +14,4 @@ salida
 kClustering
 *.log
 *.csv
+!csvs/*.csv
