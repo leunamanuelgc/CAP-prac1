@@ -23,7 +23,7 @@ class Point
 private:
     int point_id;
     int cluster_id;
-    int n_dim;
+    //int n_dim;
     vector<float> values;
 
 public:
@@ -31,7 +31,6 @@ public:
     {
         this->point_id = point_id;
         this->cluster_id = cluster_id;
-        this->n_dim = n_values;
         this->values.clear();
         for (int i = 0; i < n_values; i++)
         {
@@ -40,14 +39,14 @@ public:
     };
     int getID() const { return point_id; }
     int getClusterID() const { return cluster_id; }
-    int getDim() const { return n_dim; }
+    int getDim() const { return values.size(); }
     vector<float> getValues() const { return values; }
     float getValueAt(const int idx) const { return values[idx]; }
 
     void setClusterID(int new_cluster_id) { cluster_id = new_cluster_id; }
     bool operator==(const Point &other) const
     {
-        for (int i = 0; i < n_dim; i++)
+        for (int i = 0; i < values.size(); i++)
         {
             if (values[i] != other.values[i])
                 return false;
@@ -366,6 +365,8 @@ void kMeans(PointData data, int k)
 	chrono::duration<double> elapsed;
 	double elapsed_time;
     double total_dist_calc_t;
+    double total_centroid_calc_t;
+    double iter_t;
     
     
     vector<Cluster> clusters(k);
@@ -400,10 +401,13 @@ void kMeans(PointData data, int k)
     uint32_t old_cluster_p_count[k] = {0};
     while (iteration < MAX_ITERATIONS && !convergence_criterion)
     {
+        auto it_start = chrono::high_resolution_clock:: now();
+        auto it_end = it_start;
         int moved_points = 0;
 
         double dist_calc_t  = 0;
-        CentroidDiff centroidDiffs[k] = {CentroidDiff(data.n_dim)};
+        CentroidDiff centroidDiffs[k];
+        std::fill_n(centroidDiffs, k, CentroidDiff(data.n_dim));
 
         for (int i = 0; i < data.n_points; i++)
         {
@@ -464,7 +468,7 @@ void kMeans(PointData data, int k)
                 {
                     clusters[old_cluster_id].removePointByID(p.getID());
                     
-                    // Cendtroid diff calculation
+                    // Centroid diff calculation
                     centroidDiffs[old_cluster_id].rem_points_count++;
                     for (int j = 0; j < centroidDiffs[old_cluster_id].rem_points_sum.size(); j++)
                     {
@@ -498,6 +502,12 @@ void kMeans(PointData data, int k)
 
             // copy old centroid
             vector<float> new_centroid(clusters[i].getCentroid());
+            // maybe faster if initizlization is done inside the loop too
+            for (int j = 0; j < new_centroid.size(); j++)
+            {
+                new_centroid[j] *= (float)old_cluster_p_count[i] / clusters[i].getNumPoints();
+            }
+            
             if (centroidDiffs[i].add_points_count > 0)
             {
                 for (int j = 0; j < new_centroid.size(); j++)
@@ -512,7 +522,7 @@ void kMeans(PointData data, int k)
             {
                 for (int j = 0; j < new_centroid.size(); j++)
                 {
-                    float rem_points_mean_val = centroidDiffs[i].add_points_sum[j] / centroidDiffs[i].add_points_count;
+                    float rem_points_mean_val = centroidDiffs[i].rem_points_sum[j] / centroidDiffs[i].rem_points_count;
                     new_centroid[j] -=
                         rem_points_mean_val *
                         (float)centroidDiffs[i].rem_points_count/old_cluster_p_count[i];
@@ -520,6 +530,7 @@ void kMeans(PointData data, int k)
             }
             
             clusters[i].setCentroid(new_centroid);
+            old_cluster_p_count[i] = clusters[i].getNumPoints();
         }
 
         iteration++;
@@ -529,7 +540,12 @@ void kMeans(PointData data, int k)
             convergence_criterion = true;
         }
 
-        total_dist_calc_t += dist_calc_t;
+        it_end = chrono::high_resolution_clock::now();
+
+        elapsed = it_end - it_start;
+        elapsed_time = elapsed.count();
+
+        iter_t = elapsed_time;
 
         storeIterationData(file, data, clusters);
 
@@ -541,7 +557,10 @@ void kMeans(PointData data, int k)
         printMovedPoints(moved_points, MIN_PTS_MVMT_PCT, iteration, convergence_criterion);
         cout << endl;
         #elif PRINT >= LOG
-        cout << "[" << iteration-1 <<"] dist. T, " << dist_calc_t << endl;
+        cout << "[" << iteration-1 <<"], ";
+        cout << "iter. T, " << iter_t << ", ";
+        cout << "dist. T, " << dist_calc_t <<  ", ";
+        cout << endl;
         #endif
     }
 
@@ -564,7 +583,7 @@ bool fileExists(const std::string& filename) {
 
 int main(int argc, char **argv)
 {
-    const int N_CLUSTERS = 8;
+    const int N_CLUSTERS = 10;
 
     // Obtencion de los puntos
     PointData data = readData("salida");
@@ -585,7 +604,7 @@ int main(int argc, char **argv)
         }
     }
 
-    //srand(time(NULL));
+    srand(time(NULL));
 
     kMeans(data, N_CLUSTERS);
 

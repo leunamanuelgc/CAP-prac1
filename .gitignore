@@ -13,3 +13,4 @@ salida
 .vscode/c_cpp_properties.json
 kClustering
 *.log
+*.csv
