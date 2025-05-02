@@ -4,7 +4,7 @@
 #include <vector>
 #include <algorithm>
 #include <limits>
-//#include <omp.h>
+#include <omp.h>
 #include <iomanip>
 #include <chrono>
 
@@ -27,7 +27,7 @@ private:
     vector<float> values;
 
 public:
-    Point(int point_id, int cluster_id, int n_values, const vector<float> &values)
+    inline Point(int point_id, int cluster_id, int n_values, const vector<float> &values)
     {
         this->point_id = point_id;
         this->cluster_id = cluster_id;
@@ -38,14 +38,14 @@ public:
             this->values.push_back(values[i]);
         }
     };
-    int getID() const { return point_id; }
-    int getClusterID() const { return cluster_id; }
-    int getDim() const { return n_dim; }
-    vector<float> getValues() const { return values; }
-    float getValueAt(const int idx) const { return values[idx]; }
+    inline int getID() const { return point_id; }
+    inline int getClusterID() const { return cluster_id; }
+    inline int getDim() const { return n_dim; }
+    inline vector<float> getValues() const { return values; }
+    inline float getValueAt(const int idx) const { return values[idx]; }
 
-    void setClusterID(int new_cluster_id) { cluster_id = new_cluster_id; }
-    bool operator==(const Point &other) const
+    inline void setClusterID(int new_cluster_id) { cluster_id = new_cluster_id; }
+    inline bool operator==(const Point &other) const
     {
         for (int i = 0; i < n_dim; i++)
         {
@@ -56,7 +56,7 @@ public:
     }
 };
 
-struct pointData
+struct PointData
 {
     uint32_t n_points;
     uint32_t n_dim;
@@ -72,15 +72,15 @@ private:
     vector<Point> points;
 
 public:
-    Cluster() {}
-    Cluster(int cluster_id, int n_dim)
+    inline Cluster() {}
+    inline Cluster(int cluster_id, int n_dim)
     {
         this->cluster_id = cluster_id;
         this->n_values = n_dim;
         centroid.clear();
     }
 
-    Cluster(int cluster_id, const vector<float> &centroid)
+    inline Cluster(int cluster_id, const vector<float> &centroid)
     {
         this->cluster_id = cluster_id;
         n_values = centroid.size();
@@ -92,21 +92,21 @@ public:
         }
     }
 
-    int getID() const { return cluster_id; }
-    int getDim() const { return n_values; }
-    vector<float> getCentroid() const { return centroid; }
-    float getCentroidValue(int i) const { return centroid[i]; }
-    int getNumPoints() const { return points.size(); }
-    vector<Point> getPoints() const { return points; }
-    Point getPointAt(int index) const { return points[index]; }
+    inline int getID() const { return cluster_id; }
+    inline int getDim() const { return n_values; }
+    inline vector<float> getCentroid() const { return centroid; }
+    inline float getCentroidValue(int i) const { return centroid[i]; }
+    inline int getNumPoints() const { return points.size(); }
+    inline vector<Point> getPoints() const { return points; }
+    inline Point getPointAt(int index) const { return points[index]; }
 
-    void setCentroid(const vector<float> &new_centroid) { centroid = new_centroid; }
-    void setCentroidValue(float value, int i) { centroid[i] = value; }
+    inline void setCentroid(const vector<float> &new_centroid) { centroid = new_centroid; }
+    inline void setCentroidValue(float value, int i) { centroid[i] = value; }
     // functions by copy to keep the point vector cache friendly, I think this is probably
     // for the best since we're going to be dividing clusters even further in memory with MPI.
-    void addPoint(const Point &np) { points.push_back(np); }
-    void removePointAt(int index) { points.erase(points.begin() + index); }
-    void removePointByID(int point_id)
+    inline void addPoint(const Point &np) { points.push_back(np); }
+    inline void removePointAt(int index) { points.erase(points.begin() + index); }
+    inline void removePointByID(int point_id)
     {
         // in theory, the oldest poinst in a cluster are probably correctly categorized.
         // following this logic points that are to be removed are probably closer to the end.
@@ -123,34 +123,17 @@ public:
     }
 };
 
-/// @brief Encargado de gestionar los clusters correspondientes a cada Worker-Node,
-/// ademas del movimiento de puntos entre los mismos.
-class Master_Node
-{
-};
-
-/// @brief Encargado de ejecutar las tareas relevantes a los clusters que le corresponden.
-class Worker_Node
-{
-private:
-    // vector<Cluster> // Leaving this out for further versions, implementing only one cluster per node to start off.
-    Cluster cluster;
-
-public:
-    Worker_Node(int data_dimensions, int data_points, vector<Point> data, int worker_id);
-};
-
 /**
  * Read data from the file: "salida" and stores it inside a dataResult struct.
  * @returns dataResult
  */
-pointData readData(const string& filename)
+PointData readData(const string& filename)
 {
     ifstream file(filename, ios::binary);
     if (!file) {
         throw std::runtime_error("Could not open file: " + filename);
     }
-    pointData data;
+    PointData data;
     uint32_t n_rows, n_cols;
     
     // Leer el número de filas y columnas
@@ -171,7 +154,7 @@ pointData readData(const string& filename)
     return data;
 }
 
-void storeDataHeader(ofstream& file_stream, pointData data, vector<Cluster> clusters)
+void storeDataHeader(ofstream& file_stream, PointData data, vector<Cluster> clusters)
 {
     uint32_t n_clusters = clusters.size();
     file_stream.write(reinterpret_cast<char*>(&n_clusters), sizeof(n_clusters));
@@ -179,7 +162,7 @@ void storeDataHeader(ofstream& file_stream, pointData data, vector<Cluster> clus
     file_stream.write(reinterpret_cast<char*>(&data.n_dim), sizeof(data.n_dim));
 }
 
-void storeIterationData(ofstream& file_stream, pointData data, vector<Cluster> clusters)
+void storeIterationData(ofstream& file_stream, PointData data, vector<Cluster> clusters)
 {
     uint32_t n_clusters = clusters.size();
     // Store cluster centroid and id data
@@ -198,7 +181,7 @@ void storeIterationData(ofstream& file_stream, pointData data, vector<Cluster> c
     }
 }
 
-void storeData(const string& filename, pointData data, vector<Cluster> clusters)
+void storeData(const string& filename, PointData data, vector<Cluster> clusters)
 {
     ofstream file(filename, ios::binary);
     if (!file) {
@@ -207,22 +190,6 @@ void storeData(const string& filename, pointData data, vector<Cluster> clusters)
     storeDataHeader(file, data, clusters);
     storeIterationData(file, data, clusters);
 }
-
-/*
-point initialize_centroid(int nColumnas)
-{
-    // Inicializar k centroides (aleatorios)
-    point centroid;
-
-    for (int i = 0; i < nColumnas; i++)
-    {
-        centroid.components.push_back(20.0f * rand() / RAND_MAX);
-        cout << centroid.components[i] << "\t";
-    }
-    cout << "\n";
-    return centroid;
-}
-*/
 
 /**
  * Calculates the squared euclidean distance of nDimensions, between two points.
@@ -247,50 +214,6 @@ double sqrDist(const vector<float>& v1, const vector<float>& v2) {
 double sqrDist(const Point& p1, const Point& p2) {    
     return sqrDist(p1.getValues(), p2.getValues());
 };
-
-/**
- * Returns the new centroid by calculating the mean of every component of the points
- * @param points Every point used to calculate the new centroid.
- * @param nColumnas Dimension of the points.
- * @returns New centroid.
- */
-/*
-point calculate_new_centroid(vector<point> points, int nColumnas)
-{
-    point new_centroid;
-
-    for (int i = 0; i < nColumnas; i++)
-    {
-        new_centroid.components.push_back(0.0);
-        for (int j = 0; j < points.size(); j++)
-        {
-            new_centroid.components[i] += points[j].components[i];
-        }
-        new_centroid.components[i] /= points.size();
-    }
-    return new_centroid;
-}
-*/
-
-/*
-bool equivalentPoints(point p1, point p2, int nColumnas)
-{
-    for (int i = 0; i < nColumnas; i++)
-    {
-        if (p1.components[i] != p2.components[i])
-            return false;
-    }
-    return true;
-}
-*/
-
-/*
-point addDistance(point p, float d)
-{
-    p.distance = d;
-    return p;
-}
-*/
 
 void printClusters(vector<Cluster> clusters)
 {
@@ -340,7 +263,7 @@ void printMovedPoints(int n_moved, int convrg_pct, int iter, bool converged)
     }
 }
 
-void kMeans(pointData data, int k)
+void kMeans(PointData data, int k)
 {
     const int MAX_ITERATIONS = 30;
     const float MIN_PTS_MVMT_PCT = 0.05;
@@ -357,7 +280,7 @@ void kMeans(pointData data, int k)
     double total_it_calc_t;
     
     
-    vector<Cluster> clusters(k);
+    vector<Cluster> clusters(k); // LINK ERROR ?
     cout << fixed << setprecision(6);
 
     // Inicializar los clusters
@@ -517,7 +440,7 @@ int main(int argc, char **argv)
     const int N_CLUSTERS = 8;
 
     // Obtencion de los puntos
-    pointData data = readData("salida");
+    PointData data = readData("salida");
 
     // Hacer backup de los datos de salida preexistentes
     if (fileExists("clustered_data") && argv[0] == "b")
