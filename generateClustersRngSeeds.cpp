@@ -57,7 +57,7 @@ int main()
     srand(time(NULL));
 
     FILE* resultsFile;
-    resultsFile = fopen("salida", "wb");
+    resultsFile = fopen("./data/salida", "wb");
     int nFilas = N_CLUSTERS * N_POINTS_PER_CLUSTER;
     int nCol = N_DIMS;
     fwrite(&nFilas, sizeof(int), 1, resultsFile);
