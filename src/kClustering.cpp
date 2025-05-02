@@ -108,7 +108,7 @@ void kMeans(PointData data, int k)
         int moved_points = 0;
 
         double dist_calc_t  = 0;
-        vector<CentroidDiff> centroidDiffs;//(k, CentroidDiff(data.n_dim));
+        vector<CentroidDiff> centroidDiffs(k, CentroidDiff(data.n_dim));
 
         //#pragma omp parallel for default(private)
         for (int i = 0; i < data.n_points; i++)
@@ -195,7 +195,14 @@ void kMeans(PointData data, int k)
         //         mean calculation as a reduction method for the centroid)
 
         // Readjust new cluster centroid (cluster's points' average)
-        #pragma omp parallel for default(private)
+        //#pragma omp parallel for default(private) <-- THIS WOULD CAUSE LINKING ERRORS:
+        //                                              because of unexplicit variable initialization behaviour,
+        //                                              as a result templated classes like those of std (i.e vector)
+        //                                              will fail to produce default-constructors during compilation
+        //                                              and at the linking step won't be able to find the corresponding
+        //                                              constructors demanded by each thread's implicit default initialization
+        //                                              of the privated variables.
+        #pragma omp parallel for private(centroidDiffs, old_cluster_p_count)
         for (int i = 0; i < k; i++)
         {
             if (centroidDiffs[i].add_points_count + centroidDiffs[i].rem_points_count == 0)
