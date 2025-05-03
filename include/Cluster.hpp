@@ -1,10 +1,10 @@
 #pragma once
 
+#define NONE_CLUSTER -1
+
 #include "Point.hpp"
 
 #include <vector>
-
-#define NONE_CLUSTER -1
 
 class Cluster
 {
