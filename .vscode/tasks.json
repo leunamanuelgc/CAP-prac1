@@ -3,7 +3,7 @@
         {
             "type": "cppbuild",
             "label": "OpenMPI & OpenMP C++: mpic++ build active file",
-            "command": "mpic++",
+            "command": "mpicxx",
             "args": [
                 "-fopenmp",
                 //"-fdiagnostics-color=always",

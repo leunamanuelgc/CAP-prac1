@@ -12,6 +12,7 @@
 #include <chrono>
 #include <array>
 #include <omp.h>
+#include <mpi.h>
 
 
 void kMeans(PointData data, int k);
@@ -109,7 +110,6 @@ void kMeans(PointData data, int k)
         double dist_calc_t  = 0;
         vector<CentroidDiff> centroidDiffs(k, CentroidDiff(data.n_dim));
 
-        //#pragma omp parallel for
         for (int i = 0; i < data.n_points; i++)
         {
             Point& p = data.points[i];
@@ -201,7 +201,7 @@ void kMeans(PointData data, int k)
         //                                              and at the linking step won't be able to find the corresponding
         //                                              constructors demanded by each thread's implicit default initialization
         //                                              of the privated variables.
-        //#pragma omp parallel for //private(centroidDiffs, old_cluster_p_count)
+        #pragma omp parallel for
         for (int i = 0; i < k; i++)
         {
             if (centroidDiffs[i].add_points_count + centroidDiffs[i].rem_points_count == 0)
