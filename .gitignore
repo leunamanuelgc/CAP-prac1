@@ -15,4 +15,6 @@ kClustering
 *.log
 *.csv
 !csvs/*.csv
+
+# cmake and builds
 build/
