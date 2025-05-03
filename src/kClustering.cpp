@@ -13,6 +13,7 @@
 #include <array>
 #include <omp.h>
 
+
 void kMeans(PointData data, int k);
 
 #define VERBOSE 2
@@ -21,28 +22,27 @@ void kMeans(PointData data, int k);
 #define PRINT LOG
 //#define PRINT VERBOSE
 
+#define INPUT_DATA "../data/salida"
+#define OUTPUT_DATA "../data/cluster_data"
+
 int main(int argc, char **argv)
 {
-    std::vector<Cluster> foo(4, Cluster(10));
-    for (auto elem : foo)
-        std::cout << elem.getID() << ' ';
-
     const int N_CLUSTERS = 10;
 
     // Obtencion de los puntos
-    PointData data = readData("./data/salida");
+    PointData data = readData(INPUT_DATA);
 
     // Hacer backup de los datos de salida preexistentes
-    if (fileExists("./data/clustered_data") && argv[0] == "b")
+    if (fileExists(OUTPUT_DATA) && argv[0] == "b")
     {
         int backup_id = 0;
         bool file_created = false;
         while (!file_created)
         {
-            std::string backup_name = "./data/clustered_data_" + std::to_string(backup_id);
+            std::string backup_name = OUTPUT_DATA + (std::string)"_" + std::to_string(backup_id);
             if (!fileExists(backup_name))
             {
-                file_created = (rename("./data/clustered_data", backup_name.c_str()) == 0);
+                file_created = (rename(OUTPUT_DATA, backup_name.c_str()) == 0);
             }
             backup_id++;
         }
@@ -71,8 +71,7 @@ void kMeans(PointData data, int k)
     double total_centroid_calc_t;
     double iter_t;
     
-    std::vector<Cluster> clusters;//{k, Cluster(data.n_dim)};
-    cout << fixed << setprecision(6);
+    std::vector<Cluster> clusters(k, Cluster(data.n_dim));
 
     // Inicializar los clusters
     for (int i = 0; i < k; i++)
@@ -110,14 +109,14 @@ void kMeans(PointData data, int k)
         double dist_calc_t  = 0;
         vector<CentroidDiff> centroidDiffs(k, CentroidDiff(data.n_dim));
 
-        //#pragma omp parallel for default(private)
+        //#pragma omp parallel for
         for (int i = 0; i < data.n_points; i++)
         {
             Point& p = data.points[i];
             double min_dist = numeric_limits<double>::infinity();
             int closest_cluster_id;
 
-            //start = chrono::high_resolution_clock::now();
+            start = chrono::high_resolution_clock::now();
             
             // Calcular las distancias entre los puntos y los centroides de los k nodos
             // *emabarrassingly parallel
@@ -153,10 +152,10 @@ void kMeans(PointData data, int k)
                     }
                 }
             }
-            /*end = chrono::high_resolution_clock::now();
+            end = chrono::high_resolution_clock::now();
             elapsed = end - start;
             elapsed_time = elapsed.count();
-            dist_calc_t += elapsed_time;*/
+            dist_calc_t += elapsed_time;
 
             //  sync
 
@@ -202,7 +201,7 @@ void kMeans(PointData data, int k)
         //                                              and at the linking step won't be able to find the corresponding
         //                                              constructors demanded by each thread's implicit default initialization
         //                                              of the privated variables.
-        #pragma omp parallel for private(centroidDiffs, old_cluster_p_count)
+        //#pragma omp parallel for //private(centroidDiffs, old_cluster_p_count)
         for (int i = 0; i < k; i++)
         {
             if (centroidDiffs[i].add_points_count + centroidDiffs[i].rem_points_count == 0)

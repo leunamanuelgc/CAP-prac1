@@ -8,6 +8,8 @@
 
 inline void printClusters(std::vector<Cluster> clusters) 
 {
+    std::cout << std::fixed << std::setprecision(6);
+
     const int MAX_PRINT_LEN = 5;
     for (int i = 0; i < clusters.size(); i++)
     {
@@ -56,7 +58,7 @@ inline void printMovedPoints(int n_moved, int convrg_pct, int iter, bool converg
 
 inline void printBenchmarkCSV(int iter_n, double iter_t, double dist_t) {
     std::cout
-    << "[" << iter_n-1 <<"], "
+    << "[" << iter_n <<"], "
     << "iter. T, " << iter_t << ", "
     << "dist. T, " << dist_t <<  ", "
     << std::endl;
