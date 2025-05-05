@@ -23,8 +23,8 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank);
 // #define PRINT LOG
 #define PRINT VERBOSE
 
-#define INPUT_DATA "../data/salida"
-#define OUTPUT_DATA "../data/cluster_data"
+#define INPUT_DATA "./build/data/salida"
+#define OUTPUT_DATA "./build/data/cluster_data"
 
 int main(int argc, char **argv)
 {
@@ -42,8 +42,10 @@ int main(int argc, char **argv)
     // Obtencion de los puntos por cada proceso
     PointData data = readData(INPUT_DATA, n_mpi_procs, mpi_rank);
 
+    printLocalPointInfo(data.points, -1, n_mpi_procs, mpi_rank);
+    
     // Hacer backup de los datos de salida preexistentes
-    if (fileExists(OUTPUT_DATA) && argv[0] == "b")
+    if (mpi_rank == 0 && fileExists(OUTPUT_DATA) && argv[0] == "b")
     {
         int backup_id = 0;
         bool file_created = false;

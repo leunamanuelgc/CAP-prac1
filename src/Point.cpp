@@ -1,12 +1,10 @@
 #include "Point.hpp"
 
-Point::Point(int point_id, int cluster_id, int n_values, const std::vector<float> &values)
+/// @brief READS RAW DATA (careful for pointer manipulation) Not very idiomatic but most efficient
+///     to copy a contiguous range of float values (which follows the spec of vector<float>) into the same sized float vector
+/// @param new_values_ptr
+void Point::copyValueMemData(const std::vector<float> new_value_list, uint32_t first, uint32_t n_values)
 {
-    this->point_id = point_id;
-    this->cluster_id = cluster_id;
-    this->values.clear();
-    for (int i = 0; i < n_values; i++)
-    {
-        this->values.push_back(values[i]);
-    }
+    const float *new_values_ptr = &new_value_list[first];
+    memcpy(values.data(), new_values_ptr, n_values * sizeof(float));
 }

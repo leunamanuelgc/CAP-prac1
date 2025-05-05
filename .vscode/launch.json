@@ -21,7 +21,7 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": false,
-            "preLaunchTask": "CMake Build",
+            "preLaunchTask": "CMake Build Debug",
             "setupCommands": [
               {
                 "description": "Enable pretty-printing for gdb",
@@ -32,7 +32,7 @@
         },
         
         {
-            "name": "(gdb) Launch",
+            "name": "(gdb) Launch C++",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/${fileBasenameNoExtension}",
@@ -54,7 +54,7 @@
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "OpenMPI & OpenMP C++: mpic++ build active file"
+            "preLaunchTask": "OpenMP C++: g++ build active file"
         }
     ]
 }

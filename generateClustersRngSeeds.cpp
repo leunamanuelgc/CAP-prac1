@@ -45,26 +45,26 @@ vector<float> getNBallPoint(vector<float> k, uint32_t dim, float max_radius, flo
 
 int main()
 {
-    const int N_CLUSTERS = 2;
-    const int N_POINTS_PER_CLUSTER = 500;
+    const int N_CLUSTERS = 4;
+    const int N_POINTS_PER_CLUSTER = 2;
     const int N_DIMS = 2;
 
     const float MIN_VAL = 0;
-    const float MAX_VAL = 90;
+    const float MAX_VAL = 1;
     const float CLUSTER_DENSITY = 1;
 
     // seed rng 'randomly' to get different results per run
     srand(time(NULL));
 
     FILE* resultsFile;
-    resultsFile = fopen("./data/salida", "wb");
-    int nFilas = N_CLUSTERS * N_POINTS_PER_CLUSTER;
-    int nCol = N_DIMS;
-    fwrite(&nFilas, sizeof(int), 1, resultsFile);
-    fwrite(&nCol, sizeof(int), 1, resultsFile);
+    resultsFile = fopen("./build/data/salida", "wb");
+    uint32_t nFilas = N_CLUSTERS * N_POINTS_PER_CLUSTER;
+    uint32_t nCol = N_DIMS;
+    fwrite(&nFilas, sizeof(nFilas), 1, resultsFile);
+    fwrite(&nCol, sizeof(nCol), 1, resultsFile);
     for (int i = 0; i < N_CLUSTERS; i++)
     {
-        vector<float> centroid = getNBallPoint(vector<float>(N_DIMS, 0), N_DIMS, 300, 0);
+        vector<float> centroid = getNBallPoint(vector<float>(N_DIMS, 0), N_DIMS, 100, 0);
         for (int j = 0; j < N_POINTS_PER_CLUSTER; j++)
             fwrite(getNBallPoint(centroid, N_DIMS, MAX_VAL, MIN_VAL, CLUSTER_DENSITY).data(), sizeof(float) * nCol, 1, resultsFile);
     }

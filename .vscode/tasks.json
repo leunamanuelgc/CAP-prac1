@@ -2,8 +2,8 @@
     "tasks": [
         {
             "type": "cppbuild",
-            "label": "OpenMPI & OpenMP C++: mpic++ build active file",
-            "command": "mpicxx",
+            "label": "OpenMP C++: g++ build active file",
+            "command": "g++",
             "args": [
                 "-fopenmp",
                 //"-fdiagnostics-color=always",
@@ -24,10 +24,10 @@
                 "$gcc"
             ],
             "group": "build",
-            "detail": "Builds a hybrid MPI + OpenMP program using mpic++"
+            "detail": "Builds a C++ OpenMP program using g++"
         },
         {
-            "label": "CMake Build",
+            "label": "CMake Build Debug",
             "type": "shell",
             "command": "cmake",
             "args": [
@@ -36,10 +36,47 @@
             "options": {
               "cwd": "${workspaceFolder}"
             },
-            "problemMatcher": ["$gcc"],
+            "dependsOn": ["CMake Configure Debug"],
+            "group": "none"
+        },
+        {
+            "label": "CMake Configure Debug",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+              "-B", "build",
+              "-DCMAKE_BUILD_TYPE=Debug"
+            ],
+            "options": {
+              "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "CMake Build Release",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+              "--build", "build"
+            ],
+            "options": {
+              "cwd": "${workspaceFolder}"
+            },
             "group": {
               "kind": "build",
               "isDefault": true
+            },
+            "dependsOn": ["CMake Configure Release"]
+        },
+        {
+            "label": "CMake Configure Release",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+              "-B", "build",
+              "-DCMAKE_BUILD_TYPE=Release"
+            ],
+            "options": {
+              "cwd": "${workspaceFolder}"
             }
         }
     ],

@@ -16,6 +16,11 @@ struct PointData
     std::vector<Point> points;
     uint32_t n_total_points;
     uint32_t n_dim;
+
+    inline PointData(uint32_t n_points, uint32_t n_total_points, uint32_t n_dim) :
+        points(n_points, Point(n_dim)),
+        n_total_points(n_total_points),
+        n_dim(n_dim) {}
 };
 
 struct CentroidDiff
@@ -34,9 +39,9 @@ struct CentroidDiff
     inline static size_t nFlatBytes(uint32_t dim) { return dim * sizeof(float) * 2 + sizeof(uint32_t) * 2; }
     inline static uint32_t dim(size_t n_flat_bytes) { return (n_flat_bytes - 2 * sizeof(uint32_t)) / (2 * sizeof(float)); }
     // Function to flatten data into a byte buffer
-    void copyBytesIntoFlatBuff(std::byte* data_ptr) const;
+    void copyBytesIntoFlatBuff(std::byte *data_ptr) const;
 
-    void copyFromFlatBytes(const std::byte* flat_byte_ptr);
+    void copyFromFlatBytes(const std::byte *flat_byte_ptr);
 };
 
 // Sum operator used in the reduction of the centroid diffs

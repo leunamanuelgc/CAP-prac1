@@ -20,8 +20,8 @@ vector<float> getRandomPoint(uint32_t dim, float min, float max)
 
 int main()
 {
-    const int N_POINTS = 10000;
-    const int N_DIMS = 100;
+    const int N_POINTS = 1111;
+    const int N_DIMS = 10;
 
     const float MIN_VAL = -100.0;
     const float MAX_VAL = 100.0;
@@ -30,7 +30,7 @@ int main()
     srand(time(NULL));
 
     FILE* resultsFile;
-    resultsFile = fopen("./data/salida", "wb");
+    resultsFile = fopen("./build/data/salida", "wb");
     int nFilas = N_POINTS;
     int nCol = N_DIMS;
     fwrite(&nFilas, sizeof(int), 1, resultsFile);

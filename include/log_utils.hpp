@@ -53,7 +53,10 @@ inline void printLocalPointInfo(std::vector<Point> points, int iter_n, int n_ran
 
     const int MAX_POINTS_PRINT = 10;
     int start_idx = rand()/RAND_MAX*points.size();
-    for (int i = 0; i < MAX_POINTS_PRINT; i++)
+
+    std::cout << std::setprecision(2);
+    auto print_p = std::min(points.size(), (size_t)MAX_POINTS_PRINT);
+    for (int i = 0; i < print_p; i++)
     {
         Point& p = points[start_idx+i*points.size()/MAX_POINTS_PRINT];
         
