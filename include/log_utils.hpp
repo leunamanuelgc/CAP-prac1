@@ -58,7 +58,7 @@ inline void printLocalPointInfo(std::vector<Point> points, int iter_n, int n_ran
     auto print_p = std::min(points.size(), (size_t)MAX_POINTS_PRINT);
     for (int i = 0; i < print_p; i++)
     {
-        Point& p = points[start_idx+i*points.size()/MAX_POINTS_PRINT];
+        Point& p = points[i];//(start_idx+i*points.size()/MAX_POINTS_PRINT)%points.size()];
         
         std::cout << "Point(" << p.getID() << ") => K(" << p.getClusterID() << "): \t";
         
@@ -93,4 +93,29 @@ inline void printBenchmarkCSV(int iter_n, double iter_t, double dist_t)
         << "[" << iter_n << "], "
         << "iter. T, " << iter_t << ", "
         << "dist. T, " << dist_t << std::endl;
+}
+
+inline void printVectors(const std::vector<float>& v, size_t dim)
+{
+    for (int i = 0; i < v.size(); i ++)
+    {
+        if (i % dim == 0) std::cout << "[";
+        std::cout << (float)v[i];
+        if ((i+1) % dim == 0) std::cout << "]" << std::endl;
+        else std::cout << " ";
+    }
+}
+
+inline void printVector(const std::vector<float>& v)
+{
+    std::cout << std::fixed << std::setprecision(2);
+    std::cout << "[";
+    for (int i = 0; i < v.size(); i++)
+    {
+        std::cout << v[i];
+        if(i<(v.size()-1))
+            std::cout << " ";
+        else
+            std::cout << "]";
+    }
 }
