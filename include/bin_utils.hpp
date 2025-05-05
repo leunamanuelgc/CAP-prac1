@@ -9,7 +9,7 @@
  * Read data from the file: "salida" and stores it inside a dataResult struct.
  * @returns dataResult
  */
-PointData readData(const std::string& filename);
+PointData readData(const std::string& filename, int n_mpi_procs, int mpi_rank);
 
 void storeDataHeader(std::ofstream& file_stream, PointData data, std::vector<Cluster> clusters);
 

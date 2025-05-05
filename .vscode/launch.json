@@ -5,6 +5,33 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Debug MPI App (single process)",
+            "type": "cppdbg",
+            "request": "launch",
+            "MIMode": "gdb",
+            "program": "/usr/local/bin/mpirun",
+            "args": [
+              "-n", "4", "--verbose",
+              "--allow-run-as-root",
+              "--tag-output",
+              "--mca", "btl_vader_single_copy_mechanism", "none",
+              "${workspaceFolder}/build/k_means"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "preLaunchTask": "CMake Build",
+            "setupCommands": [
+              {
+                "description": "Enable pretty-printing for gdb",
+                "text": "-enable-pretty-printing",
+                "ignoreFailures": true
+              }
+            ]
+        },
+        
+        {
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",

@@ -25,6 +25,22 @@
             ],
             "group": "build",
             "detail": "Builds a hybrid MPI + OpenMP program using mpic++"
+        },
+        {
+            "label": "CMake Build",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+              "--build", "build"
+            ],
+            "options": {
+              "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": ["$gcc"],
+            "group": {
+              "kind": "build",
+              "isDefault": true
+            }
         }
     ],
     "version": "2.0.0"

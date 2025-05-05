@@ -9,9 +9,9 @@
 class Cluster
 {
 private:
-    int cluster_id;
-    std::vector<float> centroid;
     std::vector<Point> points;
+    std::vector<float> centroid;
+    int cluster_id;
 
 public:
     //inline Cluster() {}

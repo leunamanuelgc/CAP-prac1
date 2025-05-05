@@ -7,9 +7,9 @@
 class Point
 {
 private:
+    std::vector<float> values;
     int point_id;
     int cluster_id;
-    std::vector<float> values;
 
 public:
     inline Point() {}
