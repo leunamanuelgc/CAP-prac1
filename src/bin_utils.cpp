@@ -7,7 +7,36 @@ using namespace std;
 #include <iostream>
 #include <iomanip>
 
-PointData readData(const string &filename, int n_mpi_procs, int mpi_rank)
+PointData indvReadData(const string &filename)
+{
+    
+    ifstream file(filename, ios::binary);
+    if (!file) {
+        throw std::runtime_error("Could not open file: " + filename);
+    }
+    
+    PointData data;
+    uint32_t n_rows, n_cols;
+    
+    // Leer el número de filas y columnas
+    file.read(reinterpret_cast<char*>(&n_rows), sizeof(n_rows));
+    file.read(reinterpret_cast<char*>(&n_cols), sizeof(n_cols));
+    data.n_total_points = n_rows;
+    data.n_dim = n_cols;
+
+    // Leer y guardar los puntos del fichero binario
+    for (int i = 0; i < n_rows; i++) // each row represents a point's coordinates
+    {
+        vector<float> values(n_cols);
+        file.read(reinterpret_cast<char*>(&values[0]), n_cols * sizeof(float));
+        Point p(i, NONE_CLUSTER, values);
+        data.points.push_back(move(p));
+    }
+
+    return data;
+};
+
+PointData collectiveReadData(const string &filename, int n_mpi_procs, int mpi_rank)
 {
     uint32_t header[2];
     MPI_File fh;
@@ -36,21 +65,7 @@ PointData readData(const string &filename, int n_mpi_procs, int mpi_rank)
     vector<float> floats_v(n_local_p * n_cols);
     MPI_Offset point_coords_offset = sizeof(header) + local_p_offset * n_cols * sizeof(float);
     MPI_File_read_at(fh, point_coords_offset, floats_v.data(), n_local_p * n_cols, MPI_FLOAT, &frs);
-    // DEBUG
-    /*if (mpi_rank == -1)
-    {
-        vector<float> all_values(n_cols * n_rows);
-        MPI_File_read_at(fh, point_coords_offset, all_values.data(), n_rows * n_cols, MPI_FLOAT, &frs);
-        std::cout << std::fixed << std::setprecision(2);
-        std::cout << "All vectors(" << all_values.size()/n_cols << " floats) inside input file: " << std::endl;
-        printVectors(all_values, n_cols);
-    }
-    else
-    {
-        std::cout << std::fixed << std::setprecision(2);
-        std::cout << "Local vectors(" << floats_v.size() << " floats) read from input file: " << std::endl;
-        printVectors(floats_v, n_cols);
-    }*/
+    
     MPI_File_close(&fh);
 
     PointData data(n_local_p, n_rows, n_cols);
@@ -68,23 +83,22 @@ PointData readData(const string &filename, int n_mpi_procs, int mpi_rank)
     return data;
 };
 
-void storeDataHeader(ofstream &file_stream, PointData data, vector<Cluster> clusters)
+void storeDataHeader(ofstream &file_stream, PointData data, uint32_t n_clusters)
 {
-    uint32_t n_clusters = clusters.size();
     file_stream.write(reinterpret_cast<char *>(&n_clusters), sizeof(n_clusters));
     file_stream.write(reinterpret_cast<char *>(&data.n_total_points), sizeof(data.n_total_points));
     file_stream.write(reinterpret_cast<char *>(&data.n_dim), sizeof(data.n_dim));
 }
 
-void storeIterationData(ofstream &file_stream, PointData data, vector<Cluster> clusters)
+void storeIterationData(ofstream &file_stream, PointData data, vector<vector<float>> centroids)
 {
-    uint32_t n_clusters = clusters.size();
+    uint32_t n_clusters = centroids.size();
     // Store cluster centroid and id data
     for (int i = 0; i < n_clusters; i++)
     {
-        file_stream.write(reinterpret_cast<char *>(&clusters[i].getCentroid()[0]), sizeof(float) * clusters[i].getDim());
-        auto cluster_id = clusters[i].getID();
-        file_stream.write(reinterpret_cast<char *>(&cluster_id), sizeof(clusters[i].getID()));
+        file_stream.write(reinterpret_cast<char *>(&centroids[i][0]), sizeof(float) * data.n_dim);
+        auto cluster_id = i;
+        file_stream.write(reinterpret_cast<char *>(&cluster_id), sizeof(cluster_id));
     }
     // Store point coordinates and cluster_id data
     for (int i = 0; i < data.n_total_points; i++)
@@ -95,15 +109,15 @@ void storeIterationData(ofstream &file_stream, PointData data, vector<Cluster> c
     }
 }
 
-void storeData(const string &filename, PointData data, vector<Cluster> clusters)
+void storeData(const string &filename, PointData data, vector<vector<float>> centroids)
 {
     ofstream file(filename, ios::binary);
     if (!file)
     {
         throw std::runtime_error("Could not open file: " + filename);
     }
-    storeDataHeader(file, data, clusters);
-    storeIterationData(file, data, clusters);
+    storeDataHeader(file, data, centroids.size());
+    storeIterationData(file, data, centroids);
 }
 
 uint32_t getGroupSize(uint32_t n_total_points, int n_ranks, int rank)

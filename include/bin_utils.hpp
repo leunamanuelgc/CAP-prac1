@@ -5,17 +5,23 @@
 
 #include <fstream>
 
-/**
- * Read data from the file: "salida" and stores it inside a dataResult struct.
- * @returns dataResult
- */
-PointData readData(const std::string& filename, int n_mpi_procs, int mpi_rank);
+/// @brief Extracs all of the binary point data from the file pointed to by filename
+/// @param filename 
+/// @return 
+PointData indvReadData(const std::string &filename);
 
-void storeDataHeader(std::ofstream& file_stream, PointData data, std::vector<Cluster> clusters);
+/// @brief Extracts the binary point data pertaining to it's associated MPI Rank for all ranks.
+/// @param filename 
+/// @param n_mpi_procs 
+/// @param mpi_rank 
+/// @return 
+PointData collectiveReadData(const std::string& filename, int n_mpi_procs, int mpi_rank);
 
-void storeIterationData(std::ofstream& file_stream, PointData data, std::vector<Cluster> clusters);
+void storeDataHeader(std::ofstream& file_stream, PointData data, uint32_t n_clusters);
 
-void storeData(const std::string& filename, PointData data, std::vector<Cluster> clusters);
+void storeIterationData(std::ofstream& file_stream, PointData data, std::vector<std::vector<float>> centroids);
+
+void storeData(const std::string& filename, PointData data, std::vector<std::vector<float>> centroids);
 
 inline bool fileExists(const std::string& filename) {
     std::ifstream file(filename);

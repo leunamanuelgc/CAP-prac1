@@ -17,6 +17,7 @@ struct PointData
     uint32_t n_total_points;
     uint32_t n_dim;
 
+    inline PointData() {}
     inline PointData(uint32_t n_points, uint32_t n_total_points, uint32_t n_dim) :
         points(n_points, Point(n_dim)),
         n_total_points(n_total_points),

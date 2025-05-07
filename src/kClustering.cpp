@@ -26,6 +26,8 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank);
 #define INPUT_DATA "./build/data/salida"
 #define OUTPUT_DATA "./build/data/cluster_data"
 
+#define STORE_ITERATIONS
+
 int main(int argc, char **argv)
 {
     MPI_Init(NULL, NULL);
@@ -40,9 +42,7 @@ int main(int argc, char **argv)
     std::cout << "Rank: " << mpi_rank << "/" << n_mpi_procs-1 << std::endl;
 
     // Obtencion de los puntos por cada proceso
-    PointData data = readData(INPUT_DATA, n_mpi_procs, mpi_rank);
-
-    //printLocalPointInfo(data.points, -1, n_mpi_procs, mpi_rank);
+    PointData data = collectiveReadData(INPUT_DATA, n_mpi_procs, mpi_rank);
     
     // Hacer backup de los datos de salida preexistentes
     if (mpi_rank == 0 && fileExists(OUTPUT_DATA) && argv[0] == "b")
@@ -95,19 +95,22 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
     const int p_offset = getGroupOffset(data.n_total_points, n_mpi_procs, mpi_rank);
 
 
-    /// TODO: Binary output data file writing and formatting
-    /*
-    // Open file for iteration output on MPI rank 0
-    if (mpi_rank == 0)
+    
+#ifdef STORE_ITERATIONS
+    const int STORE_RANK = n_mpi_procs-1;
+    PointData merged_data;
+    ofstream output_file;
+    if (mpi_rank == STORE_RANK)
     {
-        ofstream file("clustered_data", ios::binary);
-        if (!file) {
-            throw std::runtime_error("Could not open file: clustered_data");
+        merged_data = indvReadData(INPUT_DATA);
+        output_file = ofstream(OUTPUT_DATA, ios::binary);
+        if (!output_file) {
+            throw std::runtime_error("Could not open file: " + (string)OUTPUT_DATA);
         }
         // And write header
-        storeDataHeader(file, data, local_clusters);
+        storeDataHeader(output_file, data, k);
     }
-    */
+#endif
 
     int iteration = 0;
     bool convergence_criterion = false;
@@ -137,39 +140,52 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
     {
         // Contains the coordinates of each centroid, ordered by cluster id.
         vector<float> bcst_centroids(data.n_dim * k);
-        vector<int> n_local_ks(k);
-        vector<int> offsets_ks(k, 0);
+        int n_local_ks[n_mpi_procs];
+        int offsets_ks[n_mpi_procs];
 
 #pragma omp parallel for
-        for (int i = 0; i < k; i++)
+        for (int i = 0; i < n_mpi_procs; i++)
         {
-            n_local_ks[i] = getGroupSize(k, n_mpi_procs, i);
-            offsets_ks[i] = getGroupOffset(k, n_mpi_procs, i);
+            //Cantidad de coordenadas de centroide por MPI rank
+            n_local_ks[i] = getGroupSize(k, n_mpi_procs, i) * data.n_dim;
+            // Offset hacia las coordenadas de centroide del MPI rank en el
+            // array "global" que contiene todas.
+            offsets_ks[i] = getGroupOffset(k, n_mpi_procs, i) * data.n_dim;
+        }
+        for (int i = 0; i < n_local_k; i++)
+        {
+            // Pick out equally spaced points from the data input vector
+            // (i.e random points, except not bc that's actually how input data is structured in the clustered data generator)
+            int ctrd_global_idx = (data.n_total_points/k) * (i+k_offset) + data.n_total_points / k / 2;
+            int ctrd_local_idx = ctrd_global_idx - p_offset;
 
-            if (i >= k_offset && i < (k_offset + n_local_k))
-            {
-                // Pick out equally spaced points from the data input vector
-                // (i.e random points, except not bc that's actually how input data is structured in the clustered data generator)
-                int centroid_idx = (n_local_p / n_local_k) * i + n_local_p / n_local_k / 2 - p_offset;
+            // RANDOM INIT
+            // int centroid_idx = i;
 
-                // RANDOM INIT
-                // int centroid_idx = i;
-
-                // RANDOM INIT
-                // int centroid_idx = (int)((float)rand()/RAND_MAX * n_local_p) + first_local_p;
-                cout << "Centroid[" << i << "] local index for init point: \t" << centroid_idx << "(MAX_LOCAL_IDX:"<< n_local_p <<")" << endl;
-                auto centroid = data.points[centroid_idx].getValues();
-                // lo suyo probablemente seria usar std::copy, pero
-                // no me apetece comerme complejidad O(N) por la cara.
-                memcpy(&bcst_centroids[i * data.n_dim], centroid.data(), data.n_dim * sizeof(float));
-            }
+            // RANDOM INIT
+            // int centroid_idx = (int)((float)rand()/RAND_MAX * n_local_p) + first_local_p;
+            std::cout << "Centroid[" << i + k_offset << "] index for init point: \t"
+            << ctrd_global_idx << "(local_idx: " << ctrd_local_idx << "/" << n_local_p << ")"
+            << "\t values:";
+            printVector(data.points[ctrd_local_idx].getValues());
+            std::cout << endl;
+            auto centroid = data.points[ctrd_local_idx].getValues();
+            // lo suyo probablemente seria usar std::copy, pero
+            // no me apetece comerme complejidad O(N) por la cara.
+            memcpy(&bcst_centroids[i * data.n_dim], centroid.data(), data.n_dim * sizeof(float));
         }
 
         // Esto lo deberiamos quitar y hacer que lo pueda calcular de forma determinista a ser posible,
         // pero necesitaria conocer los puntos en los que se basa cada cluster para la inicializacion.
         // Exchange centroid initialization values
-        MPI_Allgatherv(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, bcst_centroids.data(), n_local_ks.data(), offsets_ks.data(), MPI_FLOAT, MPI_COMM_WORLD);
+        MPI_Allgatherv(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, bcst_centroids.data(), n_local_ks, offsets_ks, MPI_FLOAT, MPI_COMM_WORLD);
 
+        // DEBUG
+        /*if (mpi_rank == 1)
+        {
+            std::cout << "BCST_CENTROID BUFFER:" << std::endl;
+            printVectors(bcst_centroids, data.n_dim);
+        }*/
 #pragma omp parallel for
         for (int i = 0; i < k; i++)
         {
@@ -178,7 +194,7 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
         }
 
         // DEBUG
-        if (mpi_rank == 0)
+        /*if (mpi_rank == 0)
         {
             for (int i = 0; i < k; i++)
             {
@@ -186,7 +202,7 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
                 printVector(centroids[i]);
                 std::cout << std::endl;
             }
-        }
+        }*/
     }
 
     while (iteration < MAX_ITERATIONS && !convergence_criterion)
@@ -367,17 +383,34 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
         printBenchmarkCSV(iteration - 1, iter_t, dist_calc_t);
 #endif
 
-        // storeIterationData(file, data, local_clusters);
-    }
-
-// Trying out per-iteration data storage
-// storeData("clustered_data", data, local_clusters);
-
-// Benchmarking
-#if PRINT >= VERBOSE
-    cout << "Total distance compute time: " << total_dist_calc_t << "(avg. per iteration: " << total_dist_calc_t / (iteration - 1) << ")\n";
-#elif PRINT >= LOG
-// cout << "total dist. compute T" << ", " << "avg. T per iter" << endl;
-// cout << total_dist_calc_t << ", " << total_dist_calc_t/(iteration-1) << endl;
+#ifdef STORE_ITERATIONS
+        vector<int> local_point_cluster_ids(n_local_p, NONE_CLUSTER); 
+        #pragma omp parallel for
+        for (int i = 0; i < n_local_p; i++)
+        {
+            local_point_cluster_ids[i] = data.points[i].getClusterID();
+        }
+        if (mpi_rank != STORE_RANK)
+        {
+            MPI_Gatherv(local_point_cluster_ids.data(), n_local_p, MPI_INT, NULL, NULL, NULL, MPI_INT, STORE_RANK, MPI_COMM_WORLD);
+        } else {
+            vector<int> point_cluster_ids(data.n_total_points, NONE_CLUSTER);
+            int recvcounts[k];
+            int displacements[k];
+            #pragma omp parallel for
+            for (int i = 0; i < k; i++)
+            {
+                recvcounts[i] = getGroupSize(data.n_total_points, n_mpi_procs, i);
+                displacements[i] = getGroupOffset(data.n_total_points, n_mpi_procs, i);
+            }
+            MPI_Gatherv(local_point_cluster_ids.data(), n_local_p, MPI_INT, point_cluster_ids.data(), recvcounts, displacements, MPI_INT, STORE_RANK, MPI_COMM_WORLD);
+            #pragma omp parallel for
+            for (int i = 0; i < data.n_total_points; i++)
+            {
+                merged_data.points[i].setClusterID(point_cluster_ids[i]);
+            }
+            storeIterationData(output_file, merged_data, centroids);
+        }
 #endif
+    }
 }
