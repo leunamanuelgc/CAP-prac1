@@ -17,8 +17,8 @@ vector<float> getDebugPoint(int id, int dim)
 
 int main()
 {
-    const int N_POINTS = 10;
-    const int N_DIMS = 4;
+    const int N_POINTS = 50;
+    const int N_DIMS = 3;
 
     FILE* resultsFile;
     resultsFile = fopen("./build/data/salida", "wb");

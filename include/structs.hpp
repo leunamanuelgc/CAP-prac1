@@ -37,7 +37,7 @@ struct CentroidDiff
                                         add_points_count(0),
                                         rem_points_count(0) {}
 
-    inline static size_t nFlatBytes(uint32_t dim) { return dim * sizeof(float) * 2 + sizeof(uint32_t) * 2; }
+    inline size_t nFlatBytes() const { return add_points_sum.size() * sizeof(float) * 2 + sizeof(uint32_t) * 2; }
     inline static uint32_t dim(size_t n_flat_bytes) { return (n_flat_bytes - 2 * sizeof(uint32_t)) / (2 * sizeof(float)); }
     // Function to flatten data into a byte buffer
     void copyBytesIntoFlatBuff(std::byte *data_ptr) const;

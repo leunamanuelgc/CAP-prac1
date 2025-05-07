@@ -6,29 +6,29 @@
 
 void centroid_diff_sum_function(void *in_bytes, void *inout_bytes, int *len, MPI_Datatype *datatype)
 {
-    const uint32_t dim = (*len - 2 * sizeof(uint32_t)) / (2 * sizeof(float));
+    const uint32_t dim = CentroidDiff::dim(*len);
 
     #pragma omp parallel
     {
-        int i = 0;
         #pragma omp for nowait
-        for (int i = 0; i < dim; i++)
+        // ADD both add and rem sums
+        for (int i = 0; i < dim*2; i++)
         {
-            float* in_ptr = &((float*)in_bytes)[i*sizeof(float)];
-            float* out_ptr = &((float*)inout_bytes)[i*sizeof(float)];
+            float* in_ptr = &(static_cast<float*>(in_bytes))[i];
+            float* out_ptr = &(static_cast<float*>(inout_bytes))[i];
             *out_ptr += *in_ptr;
         }
 
         #pragma single nowait
         {
-            uint32_t* in_ptr = &((uint32_t*)in_bytes)[i*sizeof(float)];
-            uint32_t* out_ptr = &((uint32_t*)inout_bytes)[i*sizeof(float)];
+            uint32_t* in_ptr = (uint32_t*)&(static_cast<float*>(in_bytes))[dim*2];
+            uint32_t* out_ptr = (uint32_t*)&(static_cast<float*>(inout_bytes))[dim*2];
             *out_ptr += *in_ptr;
         }
         #pragma single nowait
         {
-            uint32_t* in_ptr = &((uint32_t*)in_bytes)[i*sizeof(float)+sizeof(uint32_t)];
-            uint32_t* out_ptr = &((uint32_t*)inout_bytes)[i*sizeof(float)+sizeof(uint32_t)];
+            uint32_t* in_ptr = &((uint32_t*)&(static_cast<float*>(in_bytes))[dim*2])[1];
+            uint32_t* out_ptr = &((uint32_t*)&(static_cast<float*>(inout_bytes))[dim*2])[1];
             *out_ptr += *in_ptr;
         }
     }

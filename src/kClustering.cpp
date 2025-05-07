@@ -16,6 +16,10 @@
 #include <string.h>
 
 void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank);
+void assignPointToCluster(Point &p, int new_cluster_id, std::vector<CentroidDiff> &centroid_diffs);
+int shareAndApplyCentroidDiffs(int k, std::vector<std::vector<float>> &centroids, std::vector<CentroidDiff> &centroid_diffs,
+    std::vector<uint32_t> &cluster_point_counts, std::vector<std::byte> &flat_centroid_diffs,
+    const MPI_Op &op_sum_centroid_diffs, const MPI_Datatype &t_flat_ctd_diff);
 
 #define VERBOSE 2
 #define LOG 1
@@ -76,6 +80,7 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
     std::cout << " Running distributed K-Means algorithm..." << std::endl;
     const int MAX_ITERATIONS = 2000;
     const float MIN_PTS_MVMT_PCT = 0.05;
+
     // Benchmarking
     auto start = chrono::high_resolution_clock::now();
     auto end = start;
@@ -86,7 +91,6 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
     double iter_t;
 
     // Representa el n de local_clusters correspondiente al proceso mpi
-    //  * give remainder to the last to simplify indexing to the first for each process
     const int n_local_k = getGroupSize(k, n_mpi_procs, mpi_rank);
     const int k_offset = getGroupOffset(k, n_mpi_procs, mpi_rank);
 
@@ -121,7 +125,7 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
     vector<uint32_t> cluster_point_counts(k, 0);
 
     // Local accumulators for each processes' changes in cluster centroids (both local and foreign)
-    vector<CentroidDiff> centroidDiffs(k, CentroidDiff(data.n_dim));
+    vector<CentroidDiff> centroid_diffs(k, CentroidDiff(data.n_dim));
 
     // Register reduction operation for centroid diffs to mpi
     // (sums the corresponding CentroidDiffs individually)
@@ -130,89 +134,72 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
 
     // Register the flat centroid diff datatype to mpi
     MPI_Datatype t_flat_bytes_centroid_diff;
-    size_t n_flat_bytes = CentroidDiff::nFlatBytes(data.n_dim);
+    size_t n_flat_bytes = centroid_diffs[0].nFlatBytes();
     MPI_Type_contiguous(n_flat_bytes, MPI_BYTE, &t_flat_bytes_centroid_diff);
     MPI_Type_commit(&t_flat_bytes_centroid_diff);
     // working centroid diffs flattened array
-    vector<byte> flat_centroid_diffs(CentroidDiff::nFlatBytes(data.n_dim) * k);
+    vector<byte> flat_centroid_diffs(n_flat_bytes * k);
 
     // Inicializar los clusters (centroides)
+    for (int i = 0; i < n_local_p; i++)
     {
-        // Contains the coordinates of each centroid, ordered by cluster id.
-        vector<float> bcst_centroids(data.n_dim * k);
-        int n_local_ks[n_mpi_procs];
-        int offsets_ks[n_mpi_procs];
-
-#pragma omp parallel for
-        for (int i = 0; i < n_mpi_procs; i++)
-        {
-            //Cantidad de coordenadas de centroide por MPI rank
-            n_local_ks[i] = getGroupSize(k, n_mpi_procs, i) * data.n_dim;
-            // Offset hacia las coordenadas de centroide del MPI rank en el
-            // array "global" que contiene todas.
-            offsets_ks[i] = getGroupOffset(k, n_mpi_procs, i) * data.n_dim;
-        }
-        for (int i = 0; i < n_local_k; i++)
-        {
-            // Pick out equally spaced points from the data input vector
-            // (i.e random points, except not bc that's actually how input data is structured in the clustered data generator)
-            int ctrd_global_idx = (data.n_total_points/k) * (i+k_offset) + data.n_total_points / k / 2;
-            int ctrd_local_idx = ctrd_global_idx - p_offset;
-
-            // RANDOM INIT
-            // int centroid_idx = i;
-
-            // RANDOM INIT
-            // int centroid_idx = (int)((float)rand()/RAND_MAX * n_local_p) + first_local_p;
-            std::cout << "Centroid[" << i + k_offset << "] index for init point: \t"
-            << ctrd_global_idx << "(local_idx: " << ctrd_local_idx << "/" << n_local_p << ")"
-            << "\t values:";
-            printVector(data.points[ctrd_local_idx].getValues());
-            std::cout << endl;
-            auto centroid = data.points[ctrd_local_idx].getValues();
-            // lo suyo probablemente seria usar std::copy, pero
-            // no me apetece comerme complejidad O(N) por la cara.
-            memcpy(&bcst_centroids[i * data.n_dim], centroid.data(), data.n_dim * sizeof(float));
-        }
-
-        // Esto lo deberiamos quitar y hacer que lo pueda calcular de forma determinista a ser posible,
-        // pero necesitaria conocer los puntos en los que se basa cada cluster para la inicializacion.
-        // Exchange centroid initialization values
-        MPI_Allgatherv(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, bcst_centroids.data(), n_local_ks, offsets_ks, MPI_FLOAT, MPI_COMM_WORLD);
-
-        // DEBUG
-        /*if (mpi_rank == 1)
-        {
-            std::cout << "BCST_CENTROID BUFFER:" << std::endl;
-            printVectors(bcst_centroids, data.n_dim);
-        }*/
-#pragma omp parallel for
+        int k_init_idx = (i+p_offset) / (data.n_total_points/k);
+        assignPointToCluster(data.points[i], k_init_idx, centroid_diffs);
+    }
+    // DEBUG
+    if (mpi_rank == 0)
+    {
         for (int i = 0; i < k; i++)
         {
-            centroids[i].assign(bcst_centroids.begin() + i * data.n_dim, bcst_centroids.begin() + (i + 1) * data.n_dim);
-            
+            std::cout << "CENTROID_DIFF[" << i << "]: -(" << centroid_diffs[i].rem_points_count << "):";
+            printVector(centroid_diffs[i].rem_points_sum);
+            std::cout << "CENTROID_DIFF[" << i << "]: +(" << centroid_diffs[i].add_points_count << "):";
+            printVector(centroid_diffs[i].add_points_sum);
+            std::cout << endl;
         }
 
-        // DEBUG
-        /*if (mpi_rank == 0)
+        for (int i = 0; i < k; i++)
         {
-            for (int i = 0; i < k; i++)
-            {
-                std::cout << "CENTROID[" << i << "]: \t";
-                printVector(centroids[i]);
-                std::cout << std::endl;
-            }
-        }*/
+            std::cout << "CENTROID[" << i << "]: \t";
+            printVector(centroids[i]);
+            std::cout << std::endl;
+        }
     }
+    
+    shareAndApplyCentroidDiffs(k, centroids, centroid_diffs,
+        cluster_point_counts, flat_centroid_diffs,
+        op_sum_centroid_diffs, t_flat_bytes_centroid_diff);
+
+
+    // DEBUG
+    if (mpi_rank == 0)
+    {
+        for (int i = 0; i < k; i++)
+        {
+            std::cout << "CENTROID_DIFF[" << i << "]: -(" << centroid_diffs[i].rem_points_count << "):";
+            printVector(centroid_diffs[i].rem_points_sum);
+            std::cout << "CENTROID_DIFF[" << i << "]: +(" << centroid_diffs[i].add_points_count << "):";
+            printVector(centroid_diffs[i].add_points_sum);
+            std::cout << endl;
+        }
+
+        for (int i = 0; i < k; i++)
+        {
+            std::cout << "CENTROID[" << i << "]: \t";
+            printVector(centroids[i]);
+            std::cout << std::endl;
+        }
+    }
+
+    return;
 
     while (iteration < MAX_ITERATIONS && !convergence_criterion)
     {
         auto it_start = chrono::high_resolution_clock::now();
         auto it_end = it_start;
-        int moved_points = 0;
 
         double dist_calc_t = 0;
-        centroidDiffs = vector<CentroidDiff>(k, CentroidDiff(data.n_dim));
+        centroid_diffs = vector<CentroidDiff>(k, CentroidDiff(data.n_dim));
 
         // Should probably parallelize THIS outer for loop with OpenMP rather than the inner levels,
         // as it usually provides better results the further out (to an extent) the parallelized loop is.
@@ -225,14 +212,14 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
 
             start = chrono::high_resolution_clock::now();
 
-// Calcular las distancias entre los puntos y los centroides
-// *emabarrassingly parallel
-#pragma omp parallel shared(p, centroids, min_dist)
+            // Calcular las distancias entre los puntos y los centroides
+            // *emabarrassingly parallel
+            #pragma omp parallel shared(p, centroids, min_dist)
             {
                 double th_min_dist = numeric_limits<double>::infinity();
                 int th_closest_cluster_id;
 
-#pragma omp for nowait
+                #pragma omp for nowait
                 for (int j = 0; j < k; j++)
                 {
                     double dist = sqrDist(p.getValues(), centroids[j]);
@@ -243,13 +230,13 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
                     }
                 }
 
-// Bernat:
-// critical section extracted from thread group loop
-// to avoid reocurring locks between threads, since
-// threads are handed out a portion of the loop to
-// run, the critical section would be hit constantly
-// greatly increasing wait times for the 'mutex' to clear
-#pragma omp critical
+                // Bernat:
+                // critical section extracted from thread group loop
+                // to avoid reocurring locks between threads, since
+                // threads are handed out a portion of the loop to
+                // run, the critical section would be hit constantly
+                // greatly increasing wait times for the 'mutex' to clear
+                #pragma omp critical
                 {
                     // Comprobar cual es la menor distancia entre un punto y los centroides
                     if (th_min_dist < min_dist)
@@ -269,95 +256,13 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
             // Assign point to the new closest cluster
             if (p.getClusterID() != closest_cluster_id)
             {
-                int old_cluster_id = p.getClusterID();
-                // Remove from previous cluster
-                if (old_cluster_id != NONE_CLUSTER)
-                {
-                    // clusters[old_cluster_id].removePointByID(p.getID());
-
-                    // Centroid diff calculation
-                    centroidDiffs[old_cluster_id].rem_points_count++;
-                    for (int j = 0; j < centroidDiffs[old_cluster_id].rem_points_sum.size(); j++)
-                    {
-                        centroidDiffs[old_cluster_id].rem_points_sum[j] += p.getValueAt(j);
-                    }
-                }
-
-                // clusters[closest_cluster_id].addPoint(p);
-
-                // Cendtroid diff calculation
-                centroidDiffs[closest_cluster_id].add_points_count++;
-                for (int j = 0; j < centroidDiffs[closest_cluster_id].add_points_sum.size(); j++)
-                {
-                    centroidDiffs[closest_cluster_id].add_points_sum[j] += p.getValueAt(j);
-                }
-
-                p.setClusterID(closest_cluster_id);
+                assignPointToCluster(p, closest_cluster_id, centroid_diffs);
             }
         }
 
-#pragma omp parallel for default(none) shared(k, flat_centroid_diffs, centroidDiffs, n_flat_bytes)
-        for (int i = 0; i < k; i++)
-        {
-            byte *fcd_ptr = &flat_centroid_diffs[i * n_flat_bytes];
-            centroidDiffs[i].copyBytesIntoFlatBuff(fcd_ptr);
-        }
-
-        // Fully exchange centroid diff and point movement information
-        MPI_Allreduce(MPI_IN_PLACE, flat_centroid_diffs.data(), k, t_flat_bytes_centroid_diff, op_sum_centroid_diffs, MPI_COMM_WORLD);
-
-// Readjust new cluster centroid (cluster's points' average)
-// #pragma omp parallel for default(private) <-- THIS WOULD CAUSE LINKING ERRORS:
-//                                              because of unexplicit variable initialization behaviour,
-//                                              as a result templated classes like those of std (i.e vector)
-//                                              will fail to produce default-constructors during compilation
-//                                              and at the linking step won't be able to find the corresponding
-//                                              constructors demanded by each thread's implicit default initialization
-//                                              of the privated variables.
-#pragma omp parallel for default(none)                                                           \
-    shared(centroidDiffs, flat_centroid_diffs, n_flat_bytes, k, centroids, cluster_point_counts) \
-    reduction(+ : moved_points)
-        for (int i = 0; i < k; i++)
-        {
-            centroidDiffs[i].copyFromFlatBytes(&flat_centroid_diffs[i * n_flat_bytes]);
-
-            uint32_t prev_point_count = cluster_point_counts[i];
-            cluster_point_counts[i] += centroidDiffs[i].add_points_count - centroidDiffs[i].rem_points_count;
-            uint32_t new_point_count = cluster_point_counts[i];
-
-            moved_points += centroidDiffs[i].add_points_count;
-
-            if (centroidDiffs[i].add_points_count + centroidDiffs[i].rem_points_count == 0)
-                continue;
-
-            // copy old centroid
-            vector<float> new_centroid(centroids[i]);
-            for (int j = 0; j < new_centroid.size(); j++)
-            {
-                centroids[i][j] *= (float)prev_point_count / new_point_count;
-            }
-
-            if (centroidDiffs[i].add_points_count > 0)
-            {
-                for (int j = 0; j < new_centroid.size(); j++)
-                {
-                    float add_points_mean_val = centroidDiffs[i].add_points_sum[j] / centroidDiffs[i].add_points_count;
-                    centroids[i][j] +=
-                        add_points_mean_val *
-                        (float)centroidDiffs[i].add_points_count / new_point_count;
-                }
-            }
-            if (centroidDiffs[i].rem_points_count > 0)
-            {
-                for (int j = 0; j < centroids[i].size(); j++)
-                {
-                    float rem_points_mean_val = centroidDiffs[i].rem_points_sum[j] / centroidDiffs[i].rem_points_count;
-                    centroids[i][j] -=
-                        rem_points_mean_val *
-                        (float)centroidDiffs[i].rem_points_count / prev_point_count;
-                }
-            }
-        }
+        int moved_points = shareAndApplyCentroidDiffs(k, centroids,
+            centroid_diffs, cluster_point_counts, flat_centroid_diffs,
+            op_sum_centroid_diffs, t_flat_bytes_centroid_diff);
 
         iteration++;
 
@@ -413,4 +318,101 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
         }
 #endif
     }
+}
+
+void assignPointToCluster(Point &p, int new_cluster_id, vector<CentroidDiff> &centroid_diffs)
+{
+    std::cout << "assigning point(" << p.getID() << ") to cluster(" << new_cluster_id << ")\t old cluster: " << p.getClusterID() << std::endl;
+    int old_cluster_id = p.getClusterID();
+    // Remove from previous cluster
+    if (old_cluster_id != NONE_CLUSTER)
+    {
+        // Centroid diff calculation
+        centroid_diffs[old_cluster_id].rem_points_count++;
+        for (int j = 0; j < centroid_diffs[old_cluster_id].rem_points_sum.size(); j++)
+        {
+            centroid_diffs[old_cluster_id].rem_points_sum[j] += p.getValueAt(j);
+        }
+
+    }
+    // Cendtroid diff calculation
+    centroid_diffs[new_cluster_id].add_points_count++;
+    for (int j = 0; j < centroid_diffs[new_cluster_id].add_points_sum.size(); j++)
+    {
+        centroid_diffs[new_cluster_id].add_points_sum[j] += p.getValueAt(j);
+    }
+
+    p.setClusterID(new_cluster_id);
+}
+
+int shareAndApplyCentroidDiffs(int k, vector<vector<float>> &centroids, vector<CentroidDiff> &centroid_diffs,
+    vector<uint32_t> &cluster_point_counts, vector<byte> &flat_centroid_diffs,
+    const MPI_Op &op_sum_centroid_diffs, const MPI_Datatype &t_flat_ctd_diff)
+{
+    int moved_points = 0;
+    size_t n_flat_bytes = centroid_diffs[0].nFlatBytes();
+    #pragma omp parallel for default(none) shared(k, flat_centroid_diffs, centroid_diffs, n_flat_bytes)
+    for (int i = 0; i < k; i++)
+    {
+        byte *fcd_ptr = &flat_centroid_diffs[i * n_flat_bytes];
+        centroid_diffs[i].copyBytesIntoFlatBuff(fcd_ptr);
+    }
+
+    // Fully exchange centroid diff and point movement information
+    MPI_Allreduce(MPI_IN_PLACE, flat_centroid_diffs.data(), k, t_flat_ctd_diff, op_sum_centroid_diffs, MPI_COMM_WORLD);
+
+    // Readjust new cluster centroid (cluster's points' average)
+    // #pragma omp parallel for default(private) <-- THIS WOULD CAUSE LINKING ERRORS:
+    //                                              because of unexplicit variable initialization behaviour,
+    //                                              as a result templated classes like those of std (i.e vector)
+    //                                              will fail to produce default-constructors during compilation
+    //                                              and at the linking step won't be able to find the corresponding
+    //                                              constructors demanded by each thread's implicit default initialization
+    //                                              of the privated variables.
+    #pragma omp parallel for default(none)                                                           \
+        shared(centroid_diffs, flat_centroid_diffs, n_flat_bytes, k, centroids, cluster_point_counts) \
+        reduction(+ : moved_points)
+    for (int i = 0; i < k; i++)
+    {
+        centroid_diffs[i].copyFromFlatBytes(&flat_centroid_diffs[i * n_flat_bytes]);
+
+        uint32_t prev_point_count = cluster_point_counts[i];
+        cluster_point_counts[i] += centroid_diffs[i].add_points_count - centroid_diffs[i].rem_points_count;
+        uint32_t new_point_count = cluster_point_counts[i];
+
+        moved_points += centroid_diffs[i].add_points_count;
+
+        if (centroid_diffs[i].add_points_count + centroid_diffs[i].rem_points_count == 0)
+            continue;
+
+        // copy old centroid
+        vector<float> new_centroid(centroids[i]);
+        for (int j = 0; j < new_centroid.size(); j++)
+        {
+            centroids[i][j] *= (float)prev_point_count / new_point_count;
+        }
+
+        if (centroid_diffs[i].add_points_count > 0)
+        {
+            for (int j = 0; j < new_centroid.size(); j++)
+            {
+                float add_points_mean_val = centroid_diffs[i].add_points_sum[j] / centroid_diffs[i].add_points_count;
+                centroids[i][j] +=
+                    add_points_mean_val *
+                    (float)centroid_diffs[i].add_points_count / new_point_count;
+            }
+        }
+        if (centroid_diffs[i].rem_points_count > 0)
+        {
+            for (int j = 0; j < centroids[i].size(); j++)
+            {
+                float rem_points_mean_val = centroid_diffs[i].rem_points_sum[j] / centroid_diffs[i].rem_points_count;
+                centroids[i][j] -=
+                    rem_points_mean_val *
+                    (float)centroid_diffs[i].rem_points_count / prev_point_count;
+            }
+        }
+    }
+
+    return moved_points;
 }
