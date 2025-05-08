@@ -41,8 +41,8 @@ struct CentroidDiff
     inline static uint32_t dim(size_t n_flat_bytes) { return (n_flat_bytes - 2 * sizeof(uint32_t)) / (2 * sizeof(float)); }
     // Function to flatten data into a byte buffer
     void copyBytesIntoFlatBuff(std::byte *data_ptr) const;
-
     void copyFromFlatBytes(const std::byte *flat_byte_ptr);
+    static void addFlatDiffs(void *a, void *b, int dim);
 };
 
 // Sum operator used in the reduction of the centroid diffs

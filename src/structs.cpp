@@ -3,35 +3,42 @@
 #include <mpi.h>
 #include <cstddef>
 #include <string.h>
+#include <iostream>
 
 void centroid_diff_sum_function(void *in_bytes, void *inout_bytes, int *len, MPI_Datatype *datatype)
 {
-    const uint32_t dim = CentroidDiff::dim(*len);
+    int type_bytes = 0;
+    MPI_Type_size(*datatype, &type_bytes);
+    const uint32_t dim = CentroidDiff::dim(type_bytes);
 
     #pragma omp parallel
     {
         #pragma omp for nowait
-        // ADD both add and rem sums
-        for (int i = 0; i < dim*2; i++)
+        for (int i = 0; i < *len; i++)
         {
-            float* in_ptr = &(static_cast<float*>(in_bytes))[i];
-            float* out_ptr = &(static_cast<float*>(inout_bytes))[i];
-            *out_ptr += *in_ptr;
-        }
-
-        #pragma single nowait
-        {
-            uint32_t* in_ptr = (uint32_t*)&(static_cast<float*>(in_bytes))[dim*2];
-            uint32_t* out_ptr = (uint32_t*)&(static_cast<float*>(inout_bytes))[dim*2];
-            *out_ptr += *in_ptr;
-        }
-        #pragma single nowait
-        {
-            uint32_t* in_ptr = &((uint32_t*)&(static_cast<float*>(in_bytes))[dim*2])[1];
-            uint32_t* out_ptr = &((uint32_t*)&(static_cast<float*>(inout_bytes))[dim*2])[1];
-            *out_ptr += *in_ptr;
+            // Add two flat_centroid_diffs
+            CentroidDiff::addFlatDiffs((std::byte*)in_bytes + i*type_bytes, (std::byte*)inout_bytes + i*type_bytes, dim);
         }
     }
+}
+
+void CentroidDiff::addFlatDiffs(void *a, void *b, int dim)
+{
+    // ADD both add and rem sums
+    for (int i = 0; i < dim*2; i++)
+    {
+        float* in_float_ptr = &(static_cast<float*>(a))[i];
+        float* out_float_ptr = &(static_cast<float*>(b))[i];
+        *out_float_ptr += *in_float_ptr;
+    }
+
+    uint32_t* in_addcount_ptr = (uint32_t*)&(static_cast<float*>(a))[dim*2];
+    uint32_t* out_addcount_ptr = (uint32_t*)&(static_cast<float*>(b))[dim*2];
+    *out_addcount_ptr += *in_addcount_ptr;
+
+    uint32_t* in_remcount_ptr = &((uint32_t*)&(static_cast<float*>(a))[dim*2])[1];
+    uint32_t* out_remcount_ptr = &((uint32_t*)&(static_cast<float*>(b))[dim*2])[1];
+    *out_remcount_ptr += *in_remcount_ptr;
 }
 
 void CentroidDiff::copyBytesIntoFlatBuff(std::byte* data_ptr) const

@@ -43,3 +43,6 @@ uint32_t getGroupSize(uint32_t n_total_points, int n_ranks, int rank);
 /// @param rank 
 /// @return 
 uint32_t getGroupOffset(uint32_t n_total_points, int n_ranks, int rank);
+
+
+uint32_t getGroupForIndex(uint32_t index, uint32_t n_total_points, int n_ranks);

@@ -52,11 +52,16 @@ PointData collectiveReadData(const string &filename, int n_mpi_procs, int mpi_ra
         
         MPI_Abort(MPI_COMM_WORLD, err);
     }
+
+    std::cout << "File '" << filename << "' opened." << std::endl;
+
     if (mpi_rank == 0)
     {
         MPI_File_read(fh, header, 2, MPI_UINT32_T, &frs);
     }
     MPI_Bcast(header, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
+
+    std::cout << "PointData header broadcasted successfully (points:" << header[0] << ", dim:" << header[1] << ")" << std::endl;
 
     uint32_t n_rows=header[0], n_cols=header[1];
     auto n_local_p = getGroupSize(n_rows, n_mpi_procs, mpi_rank);
@@ -120,16 +125,30 @@ void storeData(const string &filename, PointData data, vector<vector<float>> cen
     storeIterationData(file, data, centroids);
 }
 
-uint32_t getGroupSize(uint32_t n_total_points, int n_ranks, int rank)
+uint32_t getGroupSize(uint32_t n_elements, int n_groups, int group)
 {
-    uint32_t base_amount = n_total_points / n_ranks;
-    uint32_t remainder = n_total_points % n_ranks;
-    return base_amount + (rank < remainder ? 1 : 0);
+    uint32_t base_amount = n_elements / n_groups;
+    uint32_t remainder = n_elements % n_groups;
+    return base_amount + (group < remainder ? 1 : 0);
 }
 
-uint32_t getGroupOffset(uint32_t n_total_points, int n_ranks, int rank)
+uint32_t getGroupOffset(uint32_t n_elements, int n_groups, int group)
 {
-    int base_amount = n_total_points / n_ranks;
-    int remainder = n_total_points % n_ranks;
-    return rank * base_amount + std::min(rank, remainder);
+    int base_amount = n_elements / n_groups;
+    int remainder = n_elements % n_groups;
+    return group * base_amount + std::min(group, remainder);
+}
+
+uint32_t getGroupForIndex(uint32_t index, uint32_t n_elements, int n_groups)
+{
+    uint32_t base_amount = n_elements / n_groups;
+    uint32_t remainder = n_elements % n_groups;
+
+    // The first `remainder` groups have size (base_amount + 1)
+    // Their offsets are 0, (base_amount+1), 2*(base_amount+1), ...
+    if (index < (base_amount + 1) * remainder) {
+        return index / (base_amount + 1);
+    } else {
+        return (index - ((base_amount + 1) * remainder)) / base_amount + remainder;
+    }
 }

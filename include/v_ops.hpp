@@ -9,12 +9,12 @@
  * @param p2
  * @returns Squared euclidean distance.
  */
-inline double sqrDist(const std::vector<float>& v1, const std::vector<float>& v2) {
+inline float sqrDist(const std::vector<float>& v1, const std::vector<float>& v2) {
     auto n_dim = v1.size();
     if (n_dim != v2.size())
         throw std::invalid_argument("Can't measure distance between points with different dimensions [P1-%d <=> P2-%d]");
 
-    double sqr_dist = 0;
+    float sqr_dist = 0;
     #pragma omp parallel for default(shared) reduction(+:sqr_dist)
     for (int i = 0; i < n_dim; i++)
     {

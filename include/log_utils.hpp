@@ -73,7 +73,7 @@ inline void printLocalPointInfo(std::vector<Point> points, int iter_n, int n_ran
     }
 }
 
-inline void printMovedPoints(int n_moved, int convrg_pct, int iter, bool converged)
+inline void printMovedPoints(int n_moved, float convrg_pct, int iter, bool converged)
 {
     if (converged)
     {
