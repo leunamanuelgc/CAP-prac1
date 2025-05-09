@@ -1,4 +1,5 @@
-#include "structs.hpp"
+#include "PointData.hpp"
+#include "CentroidDiffRef.hpp"
 
 #include <mpi.h>
 #include <cstddef>
@@ -9,7 +10,7 @@ void centroid_diff_sum_function(void *in_bytes, void *inout_bytes, int *len, MPI
 {
     int type_bytes = 0;
     MPI_Type_size(*datatype, &type_bytes);
-    const uint32_t dim = CentroidDiff::dim(type_bytes);
+    const uint32_t dim = CentroidDiffRef::dim(type_bytes);
 
     #pragma omp parallel
     {
@@ -17,12 +18,12 @@ void centroid_diff_sum_function(void *in_bytes, void *inout_bytes, int *len, MPI
         for (int i = 0; i < *len; i++)
         {
             // Add two flat_centroid_diffs
-            CentroidDiff::addFlatDiffs((std::byte*)in_bytes + i*type_bytes, (std::byte*)inout_bytes + i*type_bytes, dim);
+            CentroidDiffRef::addFlatDiffs((std::byte*)in_bytes + i*type_bytes, (std::byte*)inout_bytes + i*type_bytes, dim);
         }
     }
 }
 
-void CentroidDiff::addFlatDiffs(void *a, void *b, int dim)
+void CentroidDiffRef::addFlatDiffs(void *a, void *b, int dim)
 {
     // ADD both add and rem sums
     for (int i = 0; i < dim*2; i++)
@@ -41,7 +42,7 @@ void CentroidDiff::addFlatDiffs(void *a, void *b, int dim)
     *out_remcount_ptr += *in_remcount_ptr;
 }
 
-void CentroidDiff::copyBytesIntoFlatBuff(std::byte* data_ptr) const
+void CentroidDiffRef::copyBytesIntoFlatBuff(std::byte* data_ptr) const
 {
     size_t dim = add_points_sum.size();
 
@@ -54,7 +55,7 @@ void CentroidDiff::copyBytesIntoFlatBuff(std::byte* data_ptr) const
     memcpy(data_ptr, &rem_points_count, sizeof(uint32_t));
 }
 
-void CentroidDiff::copyFromFlatBytes(const std::byte* flat_byte_ptr)
+void CentroidDiffRef::copyFromFlatBytes(const std::byte* flat_byte_ptr)
 {
     //const uint32_t dim = CentroidDiff::dim(len);
     const uint32_t dim = add_points_sum.size();

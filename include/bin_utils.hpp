@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Cluster.hpp"
-#include "structs.hpp"
+#include "PointData.hpp"
+#include "Centroids.hpp"
 
 #include <fstream>
 
@@ -19,9 +19,9 @@ PointData collectiveReadData(const std::string& filename, int n_mpi_procs, int m
 
 void storeDataHeader(std::ofstream& file_stream, PointData data, uint32_t n_clusters);
 
-void storeIterationData(std::ofstream& file_stream, PointData data, std::vector<std::vector<float>> centroids);
+void storeIterationData(std::ofstream& file_stream, PointData data, Centroids centroids);
 
-void storeData(const std::string& filename, PointData data, std::vector<std::vector<float>> centroids);
+void storeData(const std::string& filename, PointData data, Centroids centroids);
 
 inline bool fileExists(const std::string& filename) {
     std::ifstream file(filename);

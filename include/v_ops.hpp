@@ -9,17 +9,33 @@
  * @param p2
  * @returns Squared euclidean distance.
  */
-inline float sqrDist(const std::vector<float>& v1, const std::vector<float>& v2) {
-    auto n_dim = v1.size();
-    if (n_dim != v2.size())
-        throw std::invalid_argument("Can't measure distance between points with different dimensions [P1-%d <=> P2-%d]");
-
-    float sqr_dist = 0;
-    #pragma omp parallel for default(shared) reduction(+:sqr_dist)
-    for (int i = 0; i < n_dim; i++)
+inline double sqrDist(const float *v1, const float *v2, uint32_t dim)
+{
+    double sqr_dist = 0;
+    // #pragma omp simd //?
+    #pragma omp parallel for reduction(+:sqr_dist)
+    for (int i = 0; i < dim; i++)
     {
         sqr_dist += (v1[i] - v2[i]) * (v1[i] - v2[i]);
     }
     
     return sqr_dist;
 };
+
+inline void addInto(double* v1, const float* v2, uint32_t dim)
+{
+    #pragma omp simd
+    for (int i = 0; i < dim; i++)
+    {
+        v1[i] += v2[i];
+    }
+}
+
+inline void addInto(double* v1, const double* v2, uint32_t dim)
+{
+    #pragma omp simd
+    for (int i = 0; i < dim; i++)
+    {
+        v1[i] += v2[i];
+    }
+}

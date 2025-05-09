@@ -35,5 +35,5 @@ target_link_libraries(k_means PUBLIC stdc++)
 
 # DEBUG Options
 target_compile_options(k_means PRIVATE -fsanitize=address -g)
-target_link_options(k_means PRIVATE -fsanitize=address -g)
+target_link_options(k_means PRIVATE -fsanitize=address)
 

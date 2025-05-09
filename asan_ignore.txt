@@ -1,0 +1,4 @@
+# Suppress MPI internal allocations
+leak:ompi_*
+leak:opal_*
+leak:PMPI_*

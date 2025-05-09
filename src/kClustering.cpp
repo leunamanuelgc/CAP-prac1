@@ -1,5 +1,8 @@
-#include "Point.hpp"
-#include "Cluster.hpp"
+#include "PointData.hpp"
+#include "PointRef.hpp"
+#include "Centroids.hpp"
+#include "CentroidDiffs.hpp"
+#include "CentroidDiffRef.hpp"
 #include "bin_utils.hpp"
 #include "log_utils.hpp"
 
@@ -16,8 +19,8 @@
 #include <string.h>
 
 void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank);
-void assignPointToCluster(Point &p, int new_cluster_id, std::vector<CentroidDiff> &centroid_diffs);
-int shareAndApplyCentroidDiffs(int k, std::vector<std::vector<float>> &centroids, std::vector<CentroidDiff> &centroid_diffs,
+void assignPointToCluster(PointRef &p, int new_cluster_id, CentroidDiffs &centroid_diffs);
+int shareAndApplyCentroidDiffs(int k, Centroids &centroids, CentroidDiffs &centroid_diffs,
     std::vector<uint32_t> &cluster_point_counts, std::vector<std::byte> &flat_centroid_diffs,
     const MPI_Op &op_sum_centroid_diffs, const MPI_Datatype &t_flat_ctd_diff);
 
@@ -92,9 +95,10 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
     double iter_t;
 
     // Representa el n de puntos correspondiente al proceso mpi
-    const int n_local_p = data.points.size();
-    const int p_offset = getGroupOffset(data.n_total_points, n_mpi_procs, mpi_rank);
-
+    const int n_local_p = data.getNPoints();
+    const int p_offset = getGroupOffset(data.getTotalPoints(), n_mpi_procs, mpi_rank);
+    const auto dim = data.getDim();
+    const auto n_total_points = data.getTotalPoints();
 
     
 #ifdef STORE_ITERATIONS
@@ -118,11 +122,11 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
 
     // Centroid representing the clusters' "average point" or "middle".
     // Ought to be shared and correctly synchronized between processes
-    vector<vector<float>> centroids(k, vector<float>(data.n_dim));
+    Centroids centroids(k, dim);
     vector<uint32_t> cluster_point_counts(k, 0);
 
     // Local accumulators for each processes' changes in cluster centroids (both local and foreign)
-    vector<CentroidDiff> centroid_diffs(k, CentroidDiff(data.n_dim));
+    CentroidDiffs centroid_diffs(k, dim);
 
     // Register reduction operation for centroid diffs to mpi
     // (sums the corresponding CentroidDiffs individually)
@@ -140,8 +144,9 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
     // Inicializar los clusters (centroides)
     for (int i = 0; i < n_local_p; i++)
     {
-        int k_init_idx = getGroupForIndex(i+p_offset, data.n_total_points, k);
-        assignPointToCluster(data.points[i], k_init_idx, centroid_diffs);
+        int k_init_idx = getGroupForIndex(i+p_offset, n_total_points, k);
+        auto p = data.getPointRef(i);
+        assignPointToCluster(p, k_init_idx, centroid_diffs);
     }
     
     shareAndApplyCentroidDiffs(k, centroids, centroid_diffs,
@@ -156,16 +161,16 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
         for (int i = 0; i < k; i++)
         {
             std::cout << "CENTROID_DIFF[" << i << "]: -(" << centroid_diffs[i].rem_points_count << "):";
-            printVector(centroid_diffs[i].rem_points_sum);
+            printVector(centroid_diffs[i].rem_points_sum, dim);
             std::cout << "CENTROID_DIFF[" << i << "]: +(" << centroid_diffs[i].add_points_count << "):";
-            printVector(centroid_diffs[i].add_points_sum);
+            printVector(centroid_diffs[i].add_points_sum, dim);
             std::cout << endl;
         }
 
         for (int i = 0; i < k; i++)
         {
             std::cout << "CENTROID[" << i << "]: \t";
-            printVector(centroids[i]);
+            printVector(centroids[i], dim);
             std::cout << std::endl;
         }
     }
@@ -177,14 +182,14 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
         auto it_end = it_start;
 
         double dist_calc_t = 0;
-        centroid_diffs = vector<CentroidDiff>(k, CentroidDiff(data.n_dim));
+        centroid_diffs = CentroidDiffs(k, dim);
 
         // Should probably parallelize THIS outer for loop with OpenMP rather than the inner levels,
         // as it usually provides better results the further out (to an extent) the parallelized loop is.
         // NOTE: though it would call for  a couple reductions, it's probably worth the hassle.
         for (int i = 0; i < n_local_p; i++)
         {
-            Point &p = data.points[i];
+            PointRef p = data.getPointRef(i);
             double min_dist = numeric_limits<double>::infinity();
             int closest_cluster_id;
 
@@ -200,7 +205,7 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
                 #pragma omp for nowait
                 for (int j = 0; j < k; j++)
                 {
-                    float dist = sqrDist(p.getValues(), centroids[j]);
+                    float dist = sqrDist(p.getValues(), centroids[j], dim);
                     if (dist < th_min_dist)
                     {
                         th_min_dist = dist;
@@ -249,22 +254,22 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
             for (int i = 0; i < k; i++)
             {
                 std::cout << "CENTROID_DIFF[" << i << "]: -(" << centroid_diffs[i].rem_points_count << "):";
-                printVector(centroid_diffs[i].rem_points_sum);
+                printVector(centroid_diffs[i].rem_points_sum, dim);
                 std::cout << "CENTROID_DIFF[" << i << "]: +(" << centroid_diffs[i].add_points_count << "):";
-                printVector(centroid_diffs[i].add_points_sum);
+                printVector(centroid_diffs[i].add_points_sum, dim);
                 std::cout << endl;
             }
 
             for (int i = 0; i < k; i++)
             {
                 std::cout << "CENTROID[" << i << "](" << cluster_point_counts[i] << "): \t";
-                printVector(centroids[i]);
+                printVector(centroids[i], dim);
                 std::cout << std::endl;
             }
         }
         #endif
 
-        if (moved_points < (data.n_total_points * MIN_PTS_MVMT_PCT))
+        if (moved_points < (n_total_points * MIN_PTS_MVMT_PCT))
         {
             convergence_criterion = true;
         }
@@ -287,31 +292,20 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
 #endif
 
 #ifdef STORE_ITERATIONS
-        vector<int> local_point_cluster_ids(n_local_p, NONE_CLUSTER); 
-        #pragma omp parallel for
-        for (int i = 0; i < n_local_p; i++)
-        {
-            local_point_cluster_ids[i] = data.points[i].getClusterID();
-        }
         if (mpi_rank != STORE_RANK)
         {
-            MPI_Gatherv(local_point_cluster_ids.data(), n_local_p, MPI_INT, NULL, NULL, NULL, MPI_INT, STORE_RANK, MPI_COMM_WORLD);
+            MPI_Gatherv(data.cluster_ids.data(), n_local_p, MPI_INT, NULL, NULL, NULL, MPI_INT, STORE_RANK, MPI_COMM_WORLD);
         } else {
-            vector<int> point_cluster_ids(data.n_total_points, NONE_CLUSTER);
+            vector<int> point_cluster_ids(n_total_points, NONE_CLUSTER);
             int recvcounts[k];
             int displacements[k];
             #pragma omp parallel for
             for (int i = 0; i < k; i++)
             {
-                recvcounts[i] = getGroupSize(data.n_total_points, n_mpi_procs, i);
-                displacements[i] = getGroupOffset(data.n_total_points, n_mpi_procs, i);
+                recvcounts[i] = getGroupSize(n_total_points, n_mpi_procs, i);
+                displacements[i] = getGroupOffset(n_total_points, n_mpi_procs, i);
             }
-            MPI_Gatherv(local_point_cluster_ids.data(), n_local_p, MPI_INT, point_cluster_ids.data(), recvcounts, displacements, MPI_INT, STORE_RANK, MPI_COMM_WORLD);
-            #pragma omp parallel for
-            for (int i = 0; i < data.n_total_points; i++)
-            {
-                merged_data.points[i].setClusterID(point_cluster_ids[i]);
-            }
+            MPI_Gatherv(data.cluster_ids.data(), n_local_p, MPI_INT, merged_data.cluster_ids.data(), recvcounts, displacements, MPI_INT, STORE_RANK, MPI_COMM_WORLD);
             storeIterationData(output_file, merged_data, centroids);
         }
 #endif
@@ -322,7 +316,7 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
 
 }
 
-void assignPointToCluster(Point &p, int new_cluster_id, vector<CentroidDiff> &centroid_diffs)
+void assignPointToCluster(PointRef &p, int new_cluster_id, CentroidDiffs &centroid_diffs)
 {
     //std::cout << "assigning point(" << p.getID() << ") to cluster(" << new_cluster_id << ")\t old cluster: " << p.getClusterID() << std::endl;
     int old_cluster_id = p.getClusterID();
@@ -330,24 +324,18 @@ void assignPointToCluster(Point &p, int new_cluster_id, vector<CentroidDiff> &ce
     if (old_cluster_id != NONE_CLUSTER)
     {
         // Centroid diff calculation
-        centroid_diffs[old_cluster_id].rem_points_count++;
-        for (int j = 0; j < centroid_diffs[old_cluster_id].rem_points_sum.size(); j++)
-        {
-            centroid_diffs[old_cluster_id].rem_points_sum[j] += p.getValueAt(j);
-        }
+        centroid_diffs[old_cluster_id].incrementRemCount();
+        addInto(centroid_diffs[old_cluster_id].rem_points_sum, p.getValues(), p.getDim());
 
     }
     // Cendtroid diff calculation
-    centroid_diffs[new_cluster_id].add_points_count++;
-    for (int j = 0; j < centroid_diffs[new_cluster_id].add_points_sum.size(); j++)
-    {
-        centroid_diffs[new_cluster_id].add_points_sum[j] += p.getValueAt(j);
-    }
+    centroid_diffs[new_cluster_id].incrementAddCount();
+    addInto(centroid_diffs[new_cluster_id].add_points_sum, p.getValues(), p.getDim());
 
     p.setClusterID(new_cluster_id);
 }
 
-int shareAndApplyCentroidDiffs(int k, vector<vector<float>> &centroids, vector<CentroidDiff> &centroid_diffs,
+int shareAndApplyCentroidDiffs(int k, Centroids &centroids, CentroidDiffs &centroid_diffs,
     vector<uint32_t> &cluster_point_counts, vector<byte> &flat_centroid_diffs,
     const MPI_Op &op_sum_centroid_diffs, const MPI_Datatype &t_flat_ctd_diff)
 {
@@ -382,29 +370,33 @@ int shareAndApplyCentroidDiffs(int k, vector<vector<float>> &centroids, vector<C
         cluster_point_counts[i] += centroid_diffs[i].add_points_count - centroid_diffs[i].rem_points_count;
         uint32_t new_point_count = cluster_point_counts[i];
 
-        moved_points += centroid_diffs[i].add_points_count;
+        moved_points += *centroid_diffs[i].add_points_count;
 
         if (new_point_count > 0)
         {
             // PROBAR CAMBIAR PRAGMA AQUI A VER SI VA MEJOR
-            for (int j = 0; j < centroids[0].size(); j++)
+            for (int j = 0; j < centroids.dim; j++)
             {
                 float add_points_mean_val = 0;
                 float rem_points_mean_val = 0;
     
     
-                if (centroid_diffs[i].add_points_count > 0)
+                if (*centroid_diffs[i].add_points_count > 0)
                 {
-                    add_points_mean_val = centroid_diffs[i].add_points_sum[j] / centroid_diffs[i].add_points_count;
+                    add_points_mean_val = centroid_diffs[i].add_points_sum[j] / *centroid_diffs[i].add_points_count;
                 }
     
-                if (centroid_diffs[i].rem_points_count > 0)
+                if (*centroid_diffs[i].rem_points_count > 0)
                 {
-                    rem_points_mean_val = centroid_diffs[i].rem_points_sum[j] / centroid_diffs[i].rem_points_count;
+                    rem_points_mean_val = centroid_diffs[i].rem_points_sum[j] / *centroid_diffs[i].rem_points_count;
                 }
     
-                centroids[i][j] = (centroids[i][j] * prev_point_count + add_points_mean_val * centroid_diffs[i].add_points_count - rem_points_mean_val * centroid_diffs[i].rem_points_count)
-                                    / new_point_count;
+                centroids[i][j] =
+                (
+                    centroids[i][j] * prev_point_count
+                    + add_points_mean_val * (*centroid_diffs[i].add_points_count)
+                    - rem_points_mean_val * (*centroid_diffs[i].rem_points_count)
+                ) / new_point_count;
             }
         }
     }
