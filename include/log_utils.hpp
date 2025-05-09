@@ -100,6 +100,20 @@ inline void printVector(float* v, size_t dim)
     }
 }
 
+inline void printVector(float* v, size_t dim, int stride, int offset)
+{
+    std::cout << std::fixed << std::setprecision(2);
+    std::cout << "[";
+    for (int i = 0; i < dim; i++)
+    {
+        std::cout << v[i*stride+offset];
+        if(i<(dim-1))
+            std::cout << " ";
+        else
+            std::cout << "]";
+    }
+}
+
 inline void printCentroidsData(Centroids &centroids, CentroidDiffs &centroid_diffs, std::vector<uint32_t> &cluster_point_counts)
 {
     auto dim = centroid_diffs.getDim();
@@ -119,4 +133,14 @@ inline void printCentroidsData(Centroids &centroids, CentroidDiffs &centroid_dif
         printVector(centroids[i], dim);
         std::cout << std::endl;
     }
+}
+
+inline void printExecData(PointData &data, int n_mpi_procs, int k)
+{
+    std::cout
+    << "n. MPI ranks " << n_mpi_procs
+    << " | n. points " << data.getTotalPoints()
+    << " | n. dimensions " << data.getDim()
+    << " | n. clusters " << k
+    << std::endl;   
 }

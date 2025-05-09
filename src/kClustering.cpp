@@ -21,6 +21,9 @@
 void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank);
 void assignPointToCluster(PointRef &p, int new_cluster_id, CentroidDiffs &centroid_diffs);
 int shareAndApplyCentroidDiffs(int k, Centroids &centroids, CentroidDiffs &centroid_diffs, std::vector<uint32_t> &cluster_point_counts);
+void getPointDataStats(PointData &data, int n_mpi_procs, int mpi_rank);
+void reduce_min_max_mean_mpi_op(void* instats, void* outinstats, int* len, MPI_Datatype* datatype);
+void reduce_var_mpi_op(void* inbuff, void* outinbuff, int* len, MPI_Datatype* datatype);
 
 //#define DEBUG
 #define VERBOSE 2
@@ -71,6 +74,16 @@ int main(int argc, char **argv)
     srand(time(NULL));
     
     kMeans(data, N_CLUSTERS, n_mpi_procs, mpi_rank);
+    
+    getPointDataStats(data, n_mpi_procs, mpi_rank);
+    
+
+#if PRINT >= LOG
+    if (mpi_rank == 0)
+    {
+        printExecData(data, n_mpi_procs, N_CLUSTERS);
+    }
+#endif
 
     MPI_Finalize();
 
@@ -311,17 +324,6 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
     << ", n. iters., " << iteration
     << std::endl;
 #endif
-#if PRINT >= LOG
-    if (mpi_rank == 0)
-    {
-        std::cout
-        << "n. MPI ranks " << n_mpi_procs
-        << " | n. points " << data.getTotalPoints()
-        << " | n. dimensions " << data.getDim()
-        << " | n. clusters " << k
-        << std::endl;
-    }
-#endif
 }
 
 void assignPointToCluster(PointRef &p, int new_cluster_id, CentroidDiffs &centroid_diffs)
@@ -400,4 +402,190 @@ int shareAndApplyCentroidDiffs(int k, Centroids &centroids, CentroidDiffs &centr
     }
 
     return moved_points;
+}
+
+void getPointDataStats(PointData &data, int n_mpi_procs, int mpi_rank)
+{
+    const auto np = data.getTotalPoints();
+    const auto dim = data.getDim();
+    /* STATS LAYOUT:
+        v[ min0, max0, mean0, var0 , min1, ... ] 
+    */
+    vector<float> rank_stats(dim*4);
+
+    const int MIN = 0;
+    const int MAX = 1;
+    const int MEAN = 2;
+    const int VAR = 3;
+    const float init_vals[4] = {
+        numeric_limits<float>::infinity(),
+        -numeric_limits<float>::infinity(),
+        0,
+        0};
+
+    MPI_Datatype stats_t;
+    MPI_Op stats_red_op;
+    MPI_Type_contiguous(4, MPI_FLOAT, &stats_t);
+    MPI_Type_commit(&stats_t);
+    MPI_Op_create(reduce_min_max_mean_mpi_op, true, &stats_red_op);
+
+    MPI_Op stats_var_red_op;
+    MPI_Op_create(reduce_var_mpi_op, true, &stats_var_red_op);
+    
+    for (int i = 0; i < dim*4; i++)
+    {
+        rank_stats[i] = init_vals[i%4];
+    }
+
+    // LOCAL RANK POINT DATA STATISTICS: MIN, MAX, MEAN
+    // reduction performed by hand for heterogeneous ops on uniform data
+    #pragma omp parallel
+    {
+        vector<float> thd_stats(dim*4);
+
+        // initialize
+        #pragma omp for
+        for (int i = 0; i < dim*4; i++)
+        {
+            thd_stats[i] = init_vals[i%4];
+        }
+
+        // each subset of point have their own stats that we then reduce
+        // efficiently with only one critical section
+        #pragma omp for 
+        for(int i = 0; i < data.coords.size(); i++)
+        {
+            const auto coord = i%dim;
+            const auto si = coord*4;
+            thd_stats[si+MIN] = std::min(thd_stats[si+MIN], data.coords[i]);
+            thd_stats[si+MAX] = std::max(thd_stats[si+MAX], data.coords[i]);
+            thd_stats[si+MEAN] += data.coords[i] / np;
+        }
+
+        #pragma omp critical(min_update)
+        for (int i = 0; i < dim; i++)
+        {
+            const auto si = i*4;
+            rank_stats[si+MIN] = std::min(rank_stats[si+MIN], thd_stats[si+MIN]);
+        }
+
+        #pragma omp critical(max_update)
+        for (int i = 0; i < dim; i++)
+        {
+            const auto si = i*4;
+            rank_stats[si+MAX] = std::max(rank_stats[si+MAX], thd_stats[si+MAX]);
+        }
+
+        #pragma omp critical(mean_update)
+        for (int i = 0; i < dim; i++)
+        {
+            const auto si = i*4;
+            rank_stats[si+MEAN] += thd_stats[si+MEAN];
+        }
+    }
+
+#if PRINT >= VERBOSE
+    if (mpi_rank == 0 || n_mpi_procs-1 == mpi_rank)
+    {
+    std::cout << "LOCAL STATS: " << std::endl
+    << "Point MIN: ";
+    printVector(rank_stats.data(), dim, 4, MIN);
+    std::cout << std::endl
+    << "Point MAX: ";
+    printVector(rank_stats.data(), dim, 4, MAX);
+    std::cout << std::endl
+    << "Point MEAN: ";
+    printVector(rank_stats.data(), dim, 4, MEAN);
+    std::cout << std::endl
+    << "Point VAR: ";
+    printVector(rank_stats.data(), dim, 4, VAR);
+    std::cout << std::endl;
+    }
+#endif
+
+    MPI_Allreduce(MPI_IN_PLACE, rank_stats.data(), dim, stats_t, stats_red_op, MPI_COMM_WORLD);
+    
+    // Compute Variance now that we know the Mean
+    #pragma omp parallel
+    {
+        vector<float> thd_variances(dim, 0);
+
+        #pragma omp for
+        for (int i = 0; i < data.coords.size(); i++)
+        {
+            const auto c = i%dim;
+            const auto rs_mean_c = c*4+MEAN;
+            thd_variances[c] += (data.coords[i]-rank_stats[rs_mean_c]) * (data.coords[i]-rank_stats[rs_mean_c]) / np;
+        }
+        
+        #pragma omp critical
+        for (int i = 0; i < dim; i++)
+        {
+            const auto rs_var_c = i*4+VAR;
+            rank_stats[rs_var_c] += thd_variances[i];
+        }
+    }
+
+    MPI_Allreduce(MPI_IN_PLACE, rank_stats.data(), dim, stats_t, stats_var_red_op, MPI_COMM_WORLD);
+
+#if PRINT >= VERBOSE
+    if (mpi_rank == 0 || n_mpi_procs-1 == mpi_rank)
+    {
+    std::cout << "GLOBAL STATS: " << std::endl
+    << "Point MIN: ";
+    printVector(rank_stats.data(), dim, 4, MIN);
+    std::cout << std::endl
+    << "Point MAX: ";
+    printVector(rank_stats.data(), dim, 4, MAX);
+    std::cout << std::endl
+    << "Point MEAN: ";
+    printVector(rank_stats.data(), dim, 4, MEAN);
+    std::cout << std::endl
+    << "Point VAR: ";
+    printVector(rank_stats.data(), dim, 4, VAR);
+    std::cout << std::endl;
+    }
+#endif
+
+    MPI_Op_free(&stats_red_op);
+    MPI_Op_free(&stats_var_red_op);
+    MPI_Type_free(&stats_t);
+}
+
+void reduce_min_max_mean_mpi_op(void* inbuff, void* outinbuff, int* len, MPI_Datatype* datatype)
+{
+    const int MIN = 0;
+    const int MAX = 1;
+    const int MEAN = 2;
+    const int VAR = 3;
+
+    const auto instats = (float*)inbuff;
+    auto outinstats = (float*)outinbuff;
+
+    #pragma omp parallel for
+    for(int i = 0; i < *len; i++)
+    {
+        const auto si = i*4;
+        outinstats[si+MIN] = std::min(instats[si+MIN], outinstats[si+MIN]);
+        outinstats[si+MAX] = std::max(instats[si+MAX], outinstats[si+MAX]);
+        outinstats[si+MEAN] += instats[si+MEAN]; // they are already weighted
+    }
+}
+
+void reduce_var_mpi_op(void* inbuff, void* outinbuff, int* len, MPI_Datatype* datatype)
+{
+    const int MIN = 0;
+    const int MAX = 1;
+    const int MEAN = 2;
+    const int VAR = 3;
+
+    const auto instats = (float*)inbuff;
+    auto outinstats = (float*)outinbuff;
+
+    #pragma omp parallel for
+    for(int i = 0; i < *len; i++)
+    {
+        const auto si = i*4;
+        outinstats[si+VAR] += instats[si+VAR]; // they are already weighted
+    }
 }
