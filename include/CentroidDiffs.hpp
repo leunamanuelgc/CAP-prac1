@@ -11,12 +11,11 @@ private:
     int n;
     uint32_t dim;
 public:
-    std::vector<double> add_points_sums;
-    std::vector<double> rem_points_sums;
-    std::vector<uint32_t> add_points_counts;
-    std::vector<uint32_t> rem_points_counts;
+    std::vector<double> add_rem_points_sums;
+    std::vector<uint32_t> add_rem_points_counts;
 
-    inline CentroidDiffRef operator[](int i) { return CentroidDiffRef{&add_points_sums[i*dim], &rem_points_sums[i*dim], &add_points_counts[i], &rem_points_counts[i], dim}; }
+    inline CentroidDiffs(int n, uint32_t dim) : add_rem_points_sums(n*dim*2, 0), add_rem_points_counts(n*2,0), n(n), dim(dim) {}
 
-    inline CentroidDiffs(int n, uint32_t dim) : add_points_sums(n*dim, 0), rem_points_sums(n*dim, 0), add_points_counts(0), rem_points_counts(0), n(n), dim(dim) {}
+    inline auto getDim() const { return dim; }
+    inline CentroidDiffRef operator[](int i) { return CentroidDiffRef{&add_rem_points_sums[i*dim], &add_rem_points_sums[n*dim+i*dim], &add_rem_points_counts[i], &add_rem_points_counts[n+i], dim}; }
 };

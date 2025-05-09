@@ -3,22 +3,23 @@
 #include <vector>
 #include <iostream>
 #include <iomanip>
+#include "CentroidDiffs.hpp"
 
-inline void printLocalPointInfo(std::vector<PointRef> points, int iter_n, int n_ranks, int rank)
+inline void printLocalPointInfo(PointData &data, int iter_n, int n_ranks, int rank)
 {
     std::cout << std::fixed << std::setprecision(6);
 
-    std::cout << "\nMPI_Rank[" << rank << "/" << n_ranks-1 << "] - n. Points: " << points.size()
+    std::cout << "\nMPI_Rank[" << rank << "/" << n_ranks-1 << "] - n. Points: " << data.getNPoints()
     << "\t ITER(" << iter_n << ")" << std::endl;
 
-    const int MAX_POINTS_PRINT = 10;
-    int start_idx = rand()/RAND_MAX*points.size();
+    const uint32_t MAX_POINTS_PRINT = 10;
+    int start_idx = rand()/RAND_MAX*data.getNPoints();
 
     std::cout << std::setprecision(2);
-    auto print_p = std::min(points.size(), (size_t)MAX_POINTS_PRINT);
+    auto print_p = std::min(data.getNPoints(), MAX_POINTS_PRINT);
     for (int i = 0; i < print_p; i++)
     {
-        PointRef& p = points[i];//(start_idx+i*points.size()/MAX_POINTS_PRINT)%points.size()];
+        PointRef p = data.getPointRef(i);//(start_idx+i*points.size()/MAX_POINTS_PRINT)%points.size()];
         
         std::cout << "Point(" << p.getID() << ") => K(" << p.getClusterID() << "): \t";
         
@@ -37,7 +38,7 @@ inline void printMovedPoints(int n_moved, float convrg_pct, int iter, bool conve
 {
     if (converged)
     {
-        std::cout << "n Moved Points(=" << n_moved << ") < "
+        std::cout << "Total N Moved Points(=" << n_moved << ") < "
                   << convrg_pct * 100 << "% - convergence criterion met STOPPING K-MEANS after \n\t"
                   << iter - 1 << " iterations" << std::endl;
     }
@@ -91,5 +92,26 @@ inline void printVector(float* v, size_t dim)
             std::cout << " ";
         else
             std::cout << "]";
+    }
+}
+
+inline void printCentroidsData(Centroids &centroids, CentroidDiffs &centroid_diffs, std::vector<uint32_t> &cluster_point_counts)
+{
+    auto dim = centroid_diffs.getDim();
+    auto k = centroids.n;
+    for (int i = 0; i < k; i++)
+    {
+        std::cout << "CENTROID_DIFF[" << i << "]: -(" << centroid_diffs[i].getRemPointsCount() << "):";
+        printVector(centroid_diffs[i].rem_points_sum, dim);
+        std::cout << "CENTROID_DIFF[" << i << "]: +(" << centroid_diffs[i].getAddPointsCount() << "):";
+        printVector(centroid_diffs[i].add_points_sum, dim);
+        std::cout << std::endl;
+    }
+
+    for (int i = 0; i < k; i++)
+    {
+        std::cout << "CENTROID[" << i << "](" << cluster_point_counts[i] << "): \t";
+        printVector(centroids[i], dim);
+        std::cout << std::endl;
     }
 }

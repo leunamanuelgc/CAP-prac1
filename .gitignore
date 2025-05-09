@@ -10,7 +10,7 @@
 ### Above combination will ignore all files without extension ###
 clustered_data
 salida
-.vscode/c_cpp_properties.json
+.vscode/*
 kClustering
 *.log
 *.csv
@@ -18,5 +18,3 @@ kClustering
 
 # cmake and builds
 build/
-.vscode/c_cpp_properties.json
-.vscode/launch.json
