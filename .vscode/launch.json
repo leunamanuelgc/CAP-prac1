@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "MIMode": "gdb",
-            "program": "/usr/local/bin/mpirun",
+            "program": "/usr/bin/mpirun",
             "args": [
               "-n", "4", "--verbose",
               "--allow-run-as-root",
