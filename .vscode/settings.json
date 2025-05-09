@@ -46,7 +46,7 @@
         "cinttypes": "cpp",
         "typeinfo": "cpp"
     },
-    "C_Cpp.default.compilerPath": "/usr/local/bin/mpic++",
+    "C_Cpp.default.compilerPath": "/usr/bin/mpic++",
     "cmake.generator": "Unix Makefiles",
     "cmake.buildDirectory": "${workspaceFolder}/build",
     "cmake.sourceDirectory": "${workspaceFolder}",
