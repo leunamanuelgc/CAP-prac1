@@ -45,12 +45,12 @@ vector<float> getNBallPoint(vector<float> k, uint32_t dim, float max_radius, flo
 
 int main()
 {
-    const int N_CLUSTERS = 10;
-    const int N_POINTS_PER_CLUSTER = 100000;
-    const int N_DIMS = 10;
+    const int N_CLUSTERS = 4;
+    const int N_POINTS_PER_CLUSTER = 500000;
+    const int N_DIMS = 3;
 
     const float MIN_VAL = 0;
-    const float MAX_VAL = 100;
+    const float MAX_VAL = 75;
     const float CLUSTER_DENSITY = 1;
 
     // seed rng 'randomly' to get different results per run
@@ -64,7 +64,7 @@ int main()
     fwrite(&nCol, sizeof(nCol), 1, resultsFile);
     for (int i = 0; i < N_CLUSTERS; i++)
     {
-        vector<float> centroid = getNBallPoint(vector<float>(N_DIMS, 0), N_DIMS, 1000, 0);
+        vector<float> centroid = getNBallPoint(vector<float>(N_DIMS, 0), N_DIMS, 100, 0);
         for (int j = 0; j < N_POINTS_PER_CLUSTER; j++)
             fwrite(getNBallPoint(centroid, N_DIMS, MAX_VAL, MIN_VAL, CLUSTER_DENSITY).data(), sizeof(float) * nCol, 1, resultsFile);
     }

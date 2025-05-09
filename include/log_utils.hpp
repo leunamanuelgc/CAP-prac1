@@ -51,12 +51,14 @@ inline void printMovedPoints(int n_moved, float convrg_pct, int iter, bool conve
     }
 }
 
-inline void printBenchmarkCSV(int iter_n, double iter_t, double dist_t)
+inline void printBenchmarkCSV(int iter_n, double iter_t, double dist_t, double ctrd_assign_t, double ctrd_move_t)
 {
     std::cout
         << "[" << iter_n << "], "
-        << "iter. T, " << iter_t << ", "
-        << "dist. T, " << dist_t << std::endl;
+        << iter_t << ", "
+        << dist_t << ", "
+        << ctrd_assign_t << ", "
+        << ctrd_move_t << std::endl;
 }
 
 inline void printVectors(const std::vector<float>& v, size_t dim)

@@ -37,7 +37,7 @@
             "program": "/usr/local/bin/mpirun",
             "args": [
                 "-n", "8",
-              "${workspaceFolder}/build/k_means"
+                "${workspaceFolder}/build/k_means"
             ],
             "cwd": "${workspaceFolder}",
             "environment": [],

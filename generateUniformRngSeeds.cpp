@@ -21,10 +21,10 @@ vector<float> getRandomPoint(uint32_t dim, float min, float max)
 int main()
 {
     const int N_POINTS = 1000000;
-    const int N_DIMS = 3;
+    const int N_DIMS = 100;
 
-    const float MIN_VAL = -100.0;
-    const float MAX_VAL = 100.0;
+    const float MIN_VAL = -10.0;
+    const float MAX_VAL = 10.0;
 
     // seed rng 'randomly' to get different results per run
     srand(time(NULL));

@@ -26,22 +26,19 @@ int shareAndApplyCentroidDiffs(int k, Centroids &centroids, CentroidDiffs &centr
 #define VERBOSE 2
 #define LOG 1
 
-//#define PRINT LOG
-#define PRINT VERBOSE
+#define PRINT LOG
+//#define PRINT VERBOSE
 
 #define INPUT_DATA "./build/data/salida"
 #define OUTPUT_DATA "./build/data/cluster_data"
 
-// Bug: high point counts release builds might segfault if store iterations is activated
-//      but storeiterations shouldn't be used for high point counts anyways, since it's
-//      main purpose is to use in datavis to check if the algorithm is running correctly.
 //#define STORE_ITERATIONS
 
 int main(int argc, char **argv)
 {
     MPI_Init(NULL, NULL);
 
-    const int N_CLUSTERS = 5;
+    const int N_CLUSTERS = 50;
 
     int n_mpi_procs;
     MPI_Comm_size(MPI_COMM_WORLD, &n_mpi_procs);
@@ -84,9 +81,16 @@ using namespace std;
 
 void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
 {
-    #if PRINT >= VERBOSE
+#if PRINT >= VERBOSE
     std::cout << " Running distributed K-Means algorithm..." << std::endl;
-    #endif
+#endif
+#if PRINT == LOG
+    // Print out CSV header col. names
+    if (mpi_rank == 0)
+    {
+        std:: cout << "iter N, iter T, dist calcs T, centroid assign T, centroid shift T" << std::endl;
+    }
+#endif
     
     const int MAX_ITERATIONS = 100;
     const float MIN_PTS_MVMT_PCT = 0.05;
@@ -98,7 +102,6 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
     auto total_end = end;
     chrono::duration<double> elapsed, total_elapsed;
     double elapsed_time;
-    double iter_t;
     double total_t;
 
     // Representa el n de puntos correspondiente al proceso mpi
@@ -175,6 +178,10 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
         auto it_end = it_start;
 
         double dist_calc_t = 0;
+        double centroid_assignment_t = 0;
+        double centroid_move_t = 0;
+        
+
         centroid_diffs = CentroidDiffs(k, dim);
 
         // Should probably parallelize THIS outer for loop with OpenMP rather than the inner levels,
@@ -189,7 +196,6 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
             start = chrono::high_resolution_clock::now();
 
             // Calcular las distancias entre los puntos y los centroides
-            // *emabarrassingly parallel
             #pragma omp parallel shared(p, centroids, min_dist)
             {
                 float th_min_dist = numeric_limits<float>::infinity();
@@ -227,14 +233,25 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
             elapsed_time = elapsed.count();
             dist_calc_t += elapsed_time;
 
+            start = chrono::high_resolution_clock::now();
             // Assign point to the new closest cluster
             if (p.getClusterID() != closest_cluster_id)
             {
                 assignPointToCluster(p, closest_cluster_id, centroid_diffs);
             }
+            end = chrono::high_resolution_clock::now();
+            elapsed = end - start;
+            elapsed_time = elapsed.count();
+            centroid_assignment_t += elapsed_time;
         }
 
+        // Centroid Shifting
+        start = chrono::high_resolution_clock::now();
         int moved_points = shareAndApplyCentroidDiffs(k, centroids, centroid_diffs, cluster_point_counts);
+        end = chrono::high_resolution_clock::now();
+        elapsed = end - start;
+        elapsed_time = elapsed.count();
+        centroid_move_t += elapsed_time;
 
         iteration++;
 
@@ -248,7 +265,7 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
         elapsed = it_end - it_start;
         elapsed_time = elapsed.count();
 
-        iter_t = elapsed_time;
+        double iter_t = elapsed_time;
 
     // PRINTING
     #ifdef DEBUG
@@ -264,7 +281,7 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
         cout << endl;
     #endif
     #if PRINT >= LOG
-        printBenchmarkCSV(iteration - 1, iter_t, dist_calc_t);
+        printBenchmarkCSV(iteration - 1, iter_t, dist_calc_t, centroid_assignment_t, centroid_move_t);
     #endif
 
     #ifdef STORE_ITERATIONS
@@ -272,10 +289,10 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
         {
             MPI_Gatherv(data.cluster_ids.data(), data.getNPoints(), MPI_INT, NULL, NULL, NULL, MPI_INT, STORE_RANK, MPI_COMM_WORLD);
         } else {
-            int recvcounts[k];
-            int displacements[k];
+            int recvcounts[n_mpi_procs];
+            int displacements[n_mpi_procs];
             #pragma omp parallel for
-            for (int i = 0; i < k; i++)
+            for (int i = 0; i < n_mpi_procs; i++)
             {
                 recvcounts[i] = getGroupSize(n_total_points, n_mpi_procs, i);
                 displacements[i] = getGroupOffset(n_total_points, n_mpi_procs, i);
@@ -286,18 +303,25 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
     #endif
     }
 
-#if PRINT >= LOG
+#if PRINT >= VERBOSE
     total_end = chrono::high_resolution_clock::now();
     total_elapsed = total_end - total_start;
     total_t = total_elapsed.count();
     std::cout << "total run t., " << total_t
     << ", n. iters., " << iteration
-    << ", n. points, " << data.getTotalPoints()
-    << ", n. clusters, " << k
     << std::endl;
 #endif
-
-
+#if PRINT >= LOG
+    if (mpi_rank == 0)
+    {
+        std::cout
+        << "n. MPI ranks " << n_mpi_procs
+        << " | n. points " << data.getTotalPoints()
+        << " | n. dimensions " << data.getDim()
+        << " | n. clusters " << k
+        << std::endl;
+    }
+#endif
 }
 
 void assignPointToCluster(PointRef &p, int new_cluster_id, CentroidDiffs &centroid_diffs)
