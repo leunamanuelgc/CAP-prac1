@@ -18,3 +18,4 @@ kClustering
 
 # cmake and builds
 build/
+.vscode/c_cpp_properties.json

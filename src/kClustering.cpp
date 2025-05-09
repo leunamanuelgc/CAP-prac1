@@ -232,7 +232,7 @@ void kMeans(PointData data, int k)
                     float rem_points_mean_val = centroidDiffs[i].rem_points_sum[j] / centroidDiffs[i].rem_points_count;
                     new_centroid[j] -=
                         rem_points_mean_val *
-                        (float)centroidDiffs[i].rem_points_count/old_cluster_p_count[i];
+                        (float)centroidDiffs[i].rem_points_count/clusters[i].getNumPoints();
                 }
             }
             
