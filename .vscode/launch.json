@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "MIMode": "gdb",
-            "program": "/usr/bin/mpirun",
+            "program": "/usr/local/bin/mpirun",
             "args": [
               "-n", "4", "--verbose",
               "--allow-run-as-root",
@@ -30,6 +30,21 @@
               }
             ]
         },
+        {
+            "name": "Benchmark K-Means (Release, no debugger)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/usr/local/bin/mpirun",
+            "args": [
+                "-n", "8",
+              "${workspaceFolder}/build/k_means"
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "stopAtEntry": false,
+            "preLaunchTask": "CMake Build Release"
+        },        
         
         {
             "name": "(gdb) Launch C++",

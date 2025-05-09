@@ -7,6 +7,7 @@ using namespace std;
 #include <iostream>
 #include <iomanip>
 
+//#define PRINT
 
 /// @brief Single process reads entire input binary file.
 /// @param filename 
@@ -52,7 +53,9 @@ PointData collectiveReadData(const string &filename, int n_mpi_procs, int mpi_ra
         MPI_Abort(MPI_COMM_WORLD, err);
     }
 
+    #ifdef PRINT
     std::cout << "File '" << filename << "' opened." << std::endl;
+    #endif
 
     if (mpi_rank == 0)
     {
@@ -60,7 +63,9 @@ PointData collectiveReadData(const string &filename, int n_mpi_procs, int mpi_ra
     }
     MPI_Bcast(header, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
 
+    #ifdef PRINT
     std::cout << "PointData header broadcasted successfully (points:" << header[0] << ", dim:" << header[1] << ")" << std::endl;
+    #endif
 
     uint32_t n_rows=header[0], n_cols=header[1];
     auto n_local_p = getGroupSize(n_rows, n_mpi_procs, mpi_rank);
@@ -72,7 +77,9 @@ PointData collectiveReadData(const string &filename, int n_mpi_procs, int mpi_ra
     
     MPI_File_close(&fh);
 
+    #ifdef PRINT
     std::cout << "Read point data (" << data.cluster_ids.size() << " points, " << data.coords.size() << " values) successfully!" << std::endl;
+    #endif
 
     return data;
 };

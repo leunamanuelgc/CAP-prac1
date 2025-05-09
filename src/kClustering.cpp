@@ -26,26 +26,31 @@ int shareAndApplyCentroidDiffs(int k, Centroids &centroids, CentroidDiffs &centr
 #define VERBOSE 2
 #define LOG 1
 
-#define PRINT LOG
-//#define PRINT VERBOSE
+//#define PRINT LOG
+#define PRINT VERBOSE
 
 #define INPUT_DATA "./build/data/salida"
 #define OUTPUT_DATA "./build/data/cluster_data"
 
+// Bug: high point counts release builds might segfault if store iterations is activated
+//      but storeiterations shouldn't be used for high point counts anyways, since it's
+//      main purpose is to use in datavis to check if the algorithm is running correctly.
 //#define STORE_ITERATIONS
 
 int main(int argc, char **argv)
 {
     MPI_Init(NULL, NULL);
 
-    const int N_CLUSTERS = 10;
+    const int N_CLUSTERS = 5;
 
     int n_mpi_procs;
     MPI_Comm_size(MPI_COMM_WORLD, &n_mpi_procs);
     int mpi_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
+    #ifdef DEBUG
     std::cout << "Rank: " << mpi_rank << "/" << n_mpi_procs-1 << std::endl;
+    #endif
 
     // Obtencion de los puntos por cada proceso
     PointData data = collectiveReadData(INPUT_DATA, n_mpi_procs, mpi_rank);
@@ -79,18 +84,22 @@ using namespace std;
 
 void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
 {
+    #if PRINT >= VERBOSE
     std::cout << " Running distributed K-Means algorithm..." << std::endl;
+    #endif
+    
     const int MAX_ITERATIONS = 100;
     const float MIN_PTS_MVMT_PCT = 0.05;
 
     // Benchmarking
     auto start = chrono::high_resolution_clock::now();
     auto end = start;
-    chrono::duration<double> elapsed;
+    auto total_start = start;
+    auto total_end = end;
+    chrono::duration<double> elapsed, total_elapsed;
     double elapsed_time;
-    double total_dist_calc_t;
-    double total_centroid_calc_t;
     double iter_t;
+    double total_t;
 
     // Representa el n de puntos correspondiente al proceso mpi
     const int n_local_p = data.getNPoints();
@@ -100,7 +109,7 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
 
     
 #ifdef STORE_ITERATIONS
-    const int STORE_RANK = n_mpi_procs-1;
+    const int STORE_RANK = 0;
     PointData merged_data;
     ofstream output_file;
     if (mpi_rank == STORE_RANK)
@@ -253,16 +262,16 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
         printLocalPointInfo(data, iteration-1,  n_mpi_procs, mpi_rank);
         printMovedPoints(moved_points, MIN_PTS_MVMT_PCT, iteration, convergence_criterion);
         cout << endl;
-    #elif PRINT >= LOG
+    #endif
+    #if PRINT >= LOG
         printBenchmarkCSV(iteration - 1, iter_t, dist_calc_t);
     #endif
 
     #ifdef STORE_ITERATIONS
         if (mpi_rank != STORE_RANK)
         {
-            MPI_Gatherv(data.cluster_ids.data(), n_local_p, MPI_INT, NULL, NULL, NULL, MPI_INT, STORE_RANK, MPI_COMM_WORLD);
+            MPI_Gatherv(data.cluster_ids.data(), data.getNPoints(), MPI_INT, NULL, NULL, NULL, MPI_INT, STORE_RANK, MPI_COMM_WORLD);
         } else {
-            vector<int> point_cluster_ids(n_total_points, NONE_CLUSTER);
             int recvcounts[k];
             int displacements[k];
             #pragma omp parallel for
@@ -271,11 +280,23 @@ void kMeans(PointData data, int k, int n_mpi_procs, int mpi_rank)
                 recvcounts[i] = getGroupSize(n_total_points, n_mpi_procs, i);
                 displacements[i] = getGroupOffset(n_total_points, n_mpi_procs, i);
             }
-            MPI_Gatherv(data.cluster_ids.data(), n_local_p, MPI_INT, merged_data.cluster_ids.data(), recvcounts, displacements, MPI_INT, STORE_RANK, MPI_COMM_WORLD);
+            MPI_Gatherv(data.cluster_ids.data(), data.getNPoints(), MPI_INT, merged_data.cluster_ids.data(), recvcounts, displacements, MPI_INT, STORE_RANK, MPI_COMM_WORLD);
             storeIterationData(output_file, merged_data, centroids);
         }
     #endif
     }
+
+#if PRINT >= LOG
+    total_end = chrono::high_resolution_clock::now();
+    total_elapsed = total_end - total_start;
+    total_t = total_elapsed.count();
+    std::cout << "total run t., " << total_t
+    << ", n. iters., " << iteration
+    << ", n. points, " << data.getTotalPoints()
+    << ", n. clusters, " << k
+    << std::endl;
+#endif
+
 
 }
 

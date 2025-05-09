@@ -5,6 +5,9 @@
 #include <iomanip>
 #include "CentroidDiffs.hpp"
 
+
+//#define PRINT
+
 inline void printLocalPointInfo(PointData &data, int iter_n, int n_ranks, int rank)
 {
     std::cout << std::fixed << std::setprecision(6);
